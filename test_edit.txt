@@ -1,2 +1,0 @@
-This is a simple text file created by Antigravity to test the AutoAccept extension.
-[OK] The file was successfully updated by Antigravity and automatically accepted!
