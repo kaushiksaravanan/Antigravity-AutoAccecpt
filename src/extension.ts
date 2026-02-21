@@ -10,7 +10,7 @@ export function activate(context: vscode.ExtensionContext): void {
             vscode.window.showErrorMessage('AutoAccept-Antigravity: Failed to create output channel.');
             return;
         }
-        outputChannel.appendLine('AutoAccept-Antigravity extension activated.');
+        outputChannel.appendLine('AutoAccept-Antigravity extension activated (native mode).');
 
         const statusBarItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
@@ -56,7 +56,6 @@ export function deactivate(): void {
             acceptor = undefined;
         }
     } catch (err: unknown) {
-        // Best-effort cleanup — nothing more we can do during deactivation
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`AutoAccept-Antigravity deactivation error: ${msg}`);
     }

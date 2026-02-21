@@ -1,59 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0d1117"/>
-      <stop offset="100%" style="stop-color:#161b22"/>
+    <linearGradient id="green-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d9373"/>
+      <stop offset="100%" style="stop-color:#14b8a6"/>
     </linearGradient>
-    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#00d4ff"/>
-      <stop offset="100%" style="stop-color:#a855f7"/>
+    <linearGradient id="green-dark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a7f64"/>
+      <stop offset="50%" style="stop-color:#0d9373"/>
+      <stop offset="100%" style="stop-color:#2dd4bf"/>
     </linearGradient>
-    <linearGradient id="check" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#22d3ee"/>
-      <stop offset="100%" style="stop-color:#8b5cf6"/>
-    </linearGradient>
-    <filter id="glow-filter">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <filter id="outer-glow">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
 
-  <!-- Background -->
-  <rect width="128" height="128" rx="20" ry="20" fill="url(#bg)"/>
+  <!-- Full square background — no rounded corners -->
+  <rect width="128" height="128" fill="#1a1a2e"/>
 
-  <!-- Outer ring glow -->
-  <circle cx="64" cy="60" r="38" fill="none" stroke="url(#glow)" stroke-width="2" opacity="0.3" filter="url(#outer-glow)"/>
+  <!-- Checkmark — bold, clean -->
+  <polyline points="34,66 54,86 94,42"
+            fill="none" stroke="url(#green-dark)" stroke-width="10"
+            stroke-linecap="round" stroke-linejoin="round"/>
 
-  <!-- Floating particles -->
-  <circle cx="30" cy="85" r="2" fill="#22d3ee" opacity="0.6"/>
-  <circle cx="95" cy="35" r="1.5" fill="#a855f7" opacity="0.5"/>
-  <circle cx="25" cy="40" r="1" fill="#22d3ee" opacity="0.4"/>
-  <circle cx="100" cy="75" r="1.8" fill="#8b5cf6" opacity="0.5"/>
-  <circle cx="50" cy="25" r="1.2" fill="#00d4ff" opacity="0.3"/>
-  <circle cx="85" cy="95" r="1" fill="#a855f7" opacity="0.4"/>
+  <!-- Upward arrow — simple flat arrow above the checkmark tip -->
+  <polygon points="94,42 94,26 102,26 88,12 74,26 82,26 82,42"
+           fill="url(#green-grad)" opacity="0.85"/>
 
-  <!-- Upward arrow / anti-gravity motif -->
-  <path d="M 64 22 L 72 35 L 67 35 L 67 45 L 61 45 L 61 35 L 56 35 Z" 
-        fill="url(#glow)" opacity="0.7" filter="url(#glow-filter)"/>
-
-  <!-- Main checkmark -->
-  <polyline points="42,62 56,76 88,44" 
-            fill="none" stroke="url(#check)" stroke-width="7" 
-            stroke-linecap="round" stroke-linejoin="round"
-            filter="url(#glow-filter)"/>
-
-  <!-- "AG" text at bottom -->
-  <text x="64" y="108" text-anchor="middle" font-family="Arial, sans-serif" 
-        font-size="14" font-weight="bold" fill="url(#glow)" opacity="0.8" 
-        letter-spacing="3">AG</text>
+  <!-- "AG" text -->
+  <text x="64" y="114" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
+        font-size="16" font-weight="700" fill="#14b8a6" opacity="0.75"
+        letter-spacing="4">AG</text>
 </svg>

@@ -1,14 +1,14 @@
 {
   "name": "auto-accept-antigravity",
   "displayName": "AutoAccept-Antigravity",
-  "description": "Automatically accept AI agent actions (file edits, terminal commands) in Antigravity Google",
-  "version": "0.2.1",
+  "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code — zero config, no launch flags needed",
+  "version": "0.3.0",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",
   "repository": {
     "type": "git",
-    "url": "https://github.com/antigravity/auto-accept.git"
+    "url": "https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt.git"
   },
   "engines": {
     "vscode": "^1.90.0"
@@ -20,7 +20,8 @@
     "ai",
     "automation",
     "auto",
-    "accept"
+    "accept",
+    "vibe-coding"
   ],
   "categories": [
     "Machine Learning",
@@ -63,15 +64,10 @@
     "package": "vsce package",
     "publish": "vsce publish"
   },
-  "dependencies": {
-    "ws": "^8.18.0"
-  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.90.0",
-    "@types/ws": "^8.5.10",
-    "@vscode/vsce": "^2.31.0",
-    "sharp": "^0.34.5",
+    "@vscode/vsce": "^3.7.1",
     "typescript": "^5.4.0"
   }
 }
