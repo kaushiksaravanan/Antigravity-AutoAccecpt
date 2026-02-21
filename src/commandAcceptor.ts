@@ -5,6 +5,11 @@ export class CommandAcceptor {
     private isRunning = false;
     private outputChannel: vscode.OutputChannel;
 
+    public onCommandAccepted?: (cmdId: string, usageCount: number) => void;
+    private executedCount = 0;
+    private lastExecutedCmd = 'none';
+    private trackingDisposables: vscode.Disposable[] = [];
+
     private readonly acceptCommands = [
         'antigravity.agent.acceptAgentStep',
         'antigravity.command.accept',
@@ -46,6 +51,9 @@ export class CommandAcceptor {
         this.intervalId = setInterval(() => {
             this.pollCommands();
         }, pollIntervalMs);
+
+        // Reset or initialize tracking
+        this.setupTracking();
     }
 
     public stop(): void {
@@ -61,6 +69,39 @@ export class CommandAcceptor {
 
     public dispose(): void {
         this.stop();
+        this.trackingDisposables.forEach(d => d.dispose());
+    }
+
+    private setupTracking(): void {
+        // Track Terminal Commands
+        if (vscode.window.onDidStartTerminalShellExecution) {
+            this.trackingDisposables.push(
+                vscode.window.onDidStartTerminalShellExecution((e) => {
+                    if (this.isRunning) {
+                        this.executedCount++;
+                        this.lastExecutedCmd = e.execution.commandLine.value || 'terminal command';
+                        if (this.onCommandAccepted) {
+                            this.onCommandAccepted(this.lastExecutedCmd, this.executedCount);
+                        }
+                    }
+                })
+            );
+        }
+
+        // Track Text Document Edits (as a proxy for inline chat accepts)
+        this.trackingDisposables.push(
+            vscode.workspace.onDidChangeTextDocument((e) => {
+                if (this.isRunning && e.contentChanges.length > 0) {
+                    // Only count significant automated changes happening very quickly 
+                    // or just count all changes while running as a proxy.
+                    this.executedCount++;
+                    this.lastExecutedCmd = `Edited \${e.document.fileName.split(/[\\\\/]/).pop()}`;
+                    if (this.onCommandAccepted) {
+                        this.onCommandAccepted(this.lastExecutedCmd, this.executedCount);
+                    }
+                }
+            })
+        );
     }
 
     private async pollCommands(): Promise<void> {

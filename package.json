@@ -41,6 +41,10 @@
       {
         "command": "autoAcceptAgent.diagnostics",
         "title": "Auto Accept: Run Diagnostics"
+      },
+      {
+        "command": "autoAcceptAgent.showPaywall",
+        "title": "Auto Accept: Show RevenueCat Paywall"
       }
     ],
     "configuration": {
@@ -83,5 +87,8 @@
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.7.1",
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@revenuecat/purchases-js": "^1.26.2"
   }
 }

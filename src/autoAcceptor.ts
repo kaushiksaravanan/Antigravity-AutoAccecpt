@@ -42,6 +42,13 @@ export class AutoAcceptor implements vscode.Disposable {
         this.statusBarItem = statusBarItem;
         this.outputChannel = outputChannel;
         this.commandAcceptor = new CommandAcceptor(outputChannel);
+
+        this.commandAcceptor.onCommandAccepted = (cmdId, count) => {
+            const shortCmd = cmdId.length > 20 ? cmdId.substring(0, 20) + '...' : cmdId;
+            const metrics = `| \${count} commands | Last: \${shortCmd}`;
+            this.updateStatusBar('on', metrics);
+        };
+
         this.updateStatusBar('off');
     }
 
@@ -167,13 +174,13 @@ export class AutoAcceptor implements vscode.Disposable {
 
     // ── Status Bar ────────────────────────────────────────────
 
-    private updateStatusBar(state: 'on' | 'off'): void {
+    private updateStatusBar(state: 'on' | 'off', extraText?: string): void {
         if (this.isDisposed || !this.statusBarItem) { return; }
 
         try {
             switch (state) {
                 case 'on':
-                    this.statusBarItem.text = '$(check) Auto Accept: ON';
+                    this.statusBarItem.text = `$(check) Auto Accept: ON \${extraText || ''}`;
                     this.statusBarItem.tooltip = 'Auto Accept is active (native mode). Click to stop.';
                     this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
                     break;

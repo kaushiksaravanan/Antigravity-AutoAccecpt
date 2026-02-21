@@ -46,8 +46,13 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         });
 
+        const paywallCommand = vscode.commands.registerCommand('autoAcceptAgent.showPaywall', async () => {
+            const { showPaywall } = await import('./paywallWebview.js');
+            showPaywall(context);
+        });
+
         // Register everything for automatic disposal
-        context.subscriptions.push(statusBarItem, outputChannel, toggleCommand, diagCommand, acceptor);
+        context.subscriptions.push(statusBarItem, outputChannel, toggleCommand, diagCommand, paywallCommand, acceptor);
 
         // Start automatically on activation
         acceptor.start().catch((err: unknown) => {
