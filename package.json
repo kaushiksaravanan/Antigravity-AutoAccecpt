@@ -2,7 +2,7 @@
   "name": "auto-accept-antigravity",
   "displayName": "AutoAccept-Antigravity",
   "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code — zero config, no launch flags needed",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",
@@ -37,6 +37,10 @@
       {
         "command": "autoAcceptAgent.toggle",
         "title": "Auto Accept: Toggle"
+      },
+      {
+        "command": "autoAcceptAgent.diagnostics",
+        "title": "Auto Accept: Run Diagnostics"
       }
     ],
     "configuration": {
@@ -53,6 +57,16 @@
             "mkfs"
           ],
           "description": "A list of strings or command snippets that, if detected near the 'Run' button, will prevent the agent from automatically accepting."
+        },
+        "autoAcceptAgent.enableCommandPolling": {
+          "type": "boolean",
+          "default": true,
+          "description": "If enabled, the extension will actively poll and execute 'accept' commands (e.g., accepting file edits and terminal commands) in the background."
+        },
+        "autoAcceptAgent.pollIntervalMs": {
+          "type": "number",
+          "default": 1500,
+          "description": "How often (in milliseconds) the extension polls for pending agent actions to accept."
         }
       }
     }

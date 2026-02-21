@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AutoAcceptor } from './autoAcceptor';
+import { runDiagnostics } from './diagnostics';
 
 let acceptor: AutoAcceptor | undefined;
 
@@ -35,8 +36,18 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         });
 
+        const diagCommand = vscode.commands.registerCommand('autoAcceptAgent.diagnostics', async () => {
+            try {
+                await runDiagnostics(outputChannel);
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                outputChannel.appendLine(`Diagnostics error: ${msg}`);
+                vscode.window.showErrorMessage(`AutoAccept diagnostics failed: ${msg}`);
+            }
+        });
+
         // Register everything for automatic disposal
-        context.subscriptions.push(statusBarItem, outputChannel, toggleCommand, acceptor);
+        context.subscriptions.push(statusBarItem, outputChannel, toggleCommand, diagCommand, acceptor);
 
         // Start automatically on activation
         acceptor.start().catch((err: unknown) => {

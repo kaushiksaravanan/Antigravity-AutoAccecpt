@@ -1,42 +1,38 @@
 import * as vscode from 'vscode';
+import { CommandAcceptor } from './commandAcceptor';
 
 /**
  * Settings that we manage for auto-approval.
  * Each entry: [section, key, valueWhenOn]
+ *
+ * These are the VS Code built-in settings that control whether the AI agent
+ * (Copilot, Gemini, etc.) can run tools, terminal commands, and file edits
+ * without showing a confirmation dialog ("Run" button).
  */
 const AUTO_APPROVE_SETTINGS: Array<[string, string, unknown]> = [
+    // Master switch: auto-approve all tool invocations
     ['chat.tools', 'autoApprove', true],
-    ['chat.agent', 'autoApprove', true],
+    // Global auto-approve (all workspaces, all tools, all terminal commands)
+    ['chat.tools.global', 'autoApprove', true],
+    // Terminal command auto-approval
     ['chat.tools.terminal', 'enableAutoApprove', true],
+    ['chat.tools.terminal', 'autoApprove', true],
+    // File edit auto-approval
+    ['chat.tools.edits', 'autoApprove', true],
+    // Increase max agent requests to reduce "Continue?" prompts
+    ['chat.agent', 'maxRequests', 100],
 ];
 
-/**
- * Known VS Code command patterns for accepting / applying agent actions.
- * We discover the full list at runtime via getCommands() and match these patterns.
- */
-const ACCEPT_COMMAND_PATTERNS: RegExp[] = [
-    /^editor\.action\.inlineSuggest\.commit$/,
-    /^editor\.action\.inlineSuggest\.acceptNextLine$/,
-    /^editor\.action\.inlineSuggest\.acceptNextWord$/,
-    /chat.*accept/i,
-    /copilot.*accept/i,
-    /agent.*accept/i,
-    /agent.*apply/i,
-];
 
 export class AutoAcceptor implements vscode.Disposable {
     private isRunning = false;
     private isDisposed = false;
     private statusBarItem: vscode.StatusBarItem;
     private outputChannel: vscode.OutputChannel;
-    private pollInterval: ReturnType<typeof setInterval> | null = null;
-    private isPollInProgress = false;
+    private commandAcceptor: CommandAcceptor;
 
     /** Saved original values so we can restore on stop/dispose. */
     private savedSettings = new Map<string, unknown>();
-
-    /** Cached list of accept commands discovered at startup. */
-    private acceptCommands: string[] = [];
 
     constructor(statusBarItem: vscode.StatusBarItem, outputChannel: vscode.OutputChannel) {
         if (!statusBarItem || !outputChannel) {
@@ -45,6 +41,7 @@ export class AutoAcceptor implements vscode.Disposable {
 
         this.statusBarItem = statusBarItem;
         this.outputChannel = outputChannel;
+        this.commandAcceptor = new CommandAcceptor(outputChannel);
         this.updateStatusBar('off');
     }
 
@@ -78,18 +75,15 @@ export class AutoAcceptor implements vscode.Disposable {
         try {
             this.log('Starting AutoAccept-Antigravity (native mode)...');
 
-            // 1. Discover accept commands
-            await this.discoverAcceptCommands();
-
-            // 2. Save current settings and apply auto-approval
+            // Save current settings and apply auto-approval
             await this.applyAutoApproveSettings();
 
             this.isRunning = true;
             this.updateStatusBar('on');
-            this.resumePolling();
+            this.commandAcceptor.start();
 
             vscode.window.showInformationMessage(
-                'AutoAccept-Antigravity: Active — auto-approval enabled. No launch flags needed!'
+                'AutoAccept-Antigravity: Active — all agent actions will be auto-approved. No launch flags needed!'
             );
             this.log('AutoAccept-Antigravity started successfully.');
         } catch (e: unknown) {
@@ -108,7 +102,7 @@ export class AutoAcceptor implements vscode.Disposable {
 
         try {
             this.log('Stopping AutoAccept-Antigravity...');
-            this.pausePolling();
+            this.commandAcceptor.stop();
             this.restoreSettings();
             this.isRunning = false;
             this.updateStatusBar('off');
@@ -125,7 +119,7 @@ export class AutoAcceptor implements vscode.Disposable {
         if (this.isDisposed) { return; }
         this.isDisposed = true;
 
-        try { this.pausePolling(); } catch { /* best-effort */ }
+        try { this.commandAcceptor.dispose(); } catch { /* best-effort */ }
         try { this.restoreSettings(); } catch { /* best-effort */ }
         try { this.statusBarItem?.dispose(); } catch { /* best-effort */ }
         try { this.outputChannel?.dispose(); } catch { /* best-effort */ }
@@ -169,87 +163,6 @@ export class AutoAcceptor implements vscode.Disposable {
             }
         }
         this.savedSettings.clear();
-    }
-
-    // ── Command Discovery ─────────────────────────────────────
-
-    private async discoverAcceptCommands(): Promise<void> {
-        try {
-            const allCommands = await vscode.commands.getCommands(true);
-            this.acceptCommands = allCommands.filter((cmd) =>
-                ACCEPT_COMMAND_PATTERNS.some((pattern) => pattern.test(cmd))
-            );
-            this.log(`Discovered ${this.acceptCommands.length} accept commands: ${this.acceptCommands.join(', ')}`);
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            this.log(`Command discovery failed: ${msg}`);
-            this.acceptCommands = [];
-        }
-    }
-
-    // ── Polling ───────────────────────────────────────────────
-
-    private resumePolling(): void {
-        if (this.isDisposed || this.pollInterval) { return; }
-        this.pollInterval = setInterval(() => this.poll(), 2000);
-    }
-
-    private pausePolling(): void {
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-            this.pollInterval = null;
-        }
-    }
-
-    private async poll(): Promise<void> {
-        if (this.isPollInProgress || !this.isRunning || this.isDisposed) {
-            return;
-        }
-
-        this.isPollInProgress = true;
-
-        try {
-            // Read blocked commands from user config
-            let blockedCommands: string[];
-            try {
-                const config = vscode.workspace.getConfiguration('autoAcceptAgent');
-                blockedCommands = config.get<string[]>('blockedCommands') ?? [
-                    'rm -rf /', 'format', 'mkfs',
-                ];
-            } catch {
-                blockedCommands = ['rm -rf /', 'format', 'mkfs'];
-            }
-
-            // Check active terminal for dangerous commands
-            const terminal = vscode.window.activeTerminal;
-            if (terminal) {
-                // We can't read terminal content directly, but the blocked commands
-                // config is used by the auto-approve terminal settings if configured.
-                // For safety, we log terminal activity.
-                this.log('Terminal active — auto-approve settings handle approval.');
-            }
-
-            // Try executing discovered accept commands
-            for (const cmd of this.acceptCommands) {
-                try {
-                    await vscode.commands.executeCommand(cmd);
-                } catch {
-                    // Command may not be applicable right now — that's fine
-                }
-            }
-
-            // Also try the most common inline suggestion acceptance
-            try {
-                await vscode.commands.executeCommand('editor.action.inlineSuggest.commit');
-            } catch {
-                // No active inline suggestion — normal
-            }
-        } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            this.log(`Poll error: ${msg}`);
-        } finally {
-            this.isPollInProgress = false;
-        }
     }
 
     // ── Status Bar ────────────────────────────────────────────
