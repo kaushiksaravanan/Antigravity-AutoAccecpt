@@ -1,0 +1,1 @@
+console.log('Monetization test script executed');

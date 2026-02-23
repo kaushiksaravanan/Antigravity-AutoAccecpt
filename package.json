@@ -1,8 +1,8 @@
 {
   "name": "auto-accept-antigravity",
-  "displayName": "AutoAccept-Antigravity",
+  "displayName": "Antigravity-AutoAccept",
   "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code — zero config, no launch flags needed",
-  "version": "0.5.1",
+  "version": "0.7.2",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",
@@ -39,6 +39,18 @@
         "title": "Auto Accept: Toggle"
       },
       {
+        "command": "autoAcceptAgent.start",
+        "title": "Auto Accept: Start"
+      },
+      {
+        "command": "autoAcceptAgent.stop",
+        "title": "Auto Accept: Stop"
+      },
+      {
+        "command": "autoAcceptAgent.acceptNow",
+        "title": "Auto Accept: Accept All Now"
+      },
+      {
         "command": "autoAcceptAgent.diagnostics",
         "title": "Auto Accept: Run Diagnostics"
       },
@@ -47,9 +59,38 @@
         "title": "Auto Accept: Show RevenueCat Paywall"
       }
     ],
+    "keybindings": [
+      {
+        "command": "autoAcceptAgent.acceptNow",
+        "key": "ctrl+shift+y",
+        "mac": "cmd+shift+y"
+      }
+    ],
     "configuration": {
       "title": "Auto Accept Agent",
       "properties": {
+        "autoAcceptAgent.enableCommandPolling": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic polling of accept/approve commands."
+        },
+        "autoAcceptAgent.pollIntervalMs": {
+          "type": "number",
+          "default": 800,
+          "minimum": 200,
+          "maximum": 10000,
+          "description": "Interval in milliseconds between polling cycles. Lower = faster auto-acceptance but more CPU. Default: 800ms."
+        },
+        "autoAcceptAgent.autoConfigureSettings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically configure VS Code/Antigravity settings to skip command approval prompts."
+        },
+        "autoAcceptAgent.interceptNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically accept primary actions on approval notifications (Run, Allow, Yes)."
+        },
         "autoAcceptAgent.blockedCommands": {
           "type": "array",
           "items": {
@@ -58,19 +99,14 @@
           "default": [
             "rm -rf /",
             "format",
-            "mkfs"
+            "mkfs",
+            "del",
+            "del *",
+            "rmdir",
+            "rd",
+            "erase"
           ],
           "description": "A list of strings or command snippets that, if detected near the 'Run' button, will prevent the agent from automatically accepting."
-        },
-        "autoAcceptAgent.enableCommandPolling": {
-          "type": "boolean",
-          "default": true,
-          "description": "If enabled, the extension will actively poll and execute 'accept' commands (e.g., accepting file edits and terminal commands) in the background."
-        },
-        "autoAcceptAgent.pollIntervalMs": {
-          "type": "number",
-          "default": 1500,
-          "description": "How often (in milliseconds) the extension polls for pending agent actions to accept."
         }
       }
     }
@@ -85,10 +121,12 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.7.1",
     "typescript": "^5.4.0"
   },
   "dependencies": {
-    "@revenuecat/purchases-js": "^1.26.2"
+    "@revenuecat/purchases-js": "^1.26.2",
+    "ws": "^8.19.0"
   }
 }

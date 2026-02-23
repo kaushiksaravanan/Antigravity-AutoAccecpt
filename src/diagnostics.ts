@@ -65,11 +65,13 @@ const COMMAND_SEARCH_PATTERNS: RegExp[] = [
 export async function runDiagnostics(outputChannel: vscode.OutputChannel): Promise<void> {
     outputChannel.show(true);
     outputChannel.appendLine('=== Starting Diagnostics ===');
+    console.log('=== Starting Diagnostics ===');
 
     const lines: string[] = [];
     const log = (msg: string) => {
         lines.push(msg);
         outputChannel.appendLine(msg);
+        console.log(msg);
     };
 
     log('# AutoAccept-Antigravity Diagnostics Report');
@@ -183,10 +185,13 @@ export async function runDiagnostics(outputChannel: vscode.OutputChannel): Promi
         const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(reportPath));
         await vscode.window.showTextDocument(doc, { preview: false });
         outputChannel.appendLine(`Report saved to: ${reportPath}`);
+        console.log(`Report saved to: ${reportPath}`);
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         outputChannel.appendLine(`Could not open report file: ${msg}`);
+        console.log(`Could not open report file: ${msg}`);
         outputChannel.appendLine('Full report is printed above in this output channel.');
+        console.log('Full report is printed above in this output channel.');
     }
 
     vscode.window.showInformationMessage('AutoAccept Diagnostics complete! Check Output Channel and report.');
