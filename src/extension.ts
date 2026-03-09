@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         statusBarItem.command = 'autoAcceptAgent.toggle';
 
-        acceptor = new AutoAcceptor(statusBarItem, outputChannel);
+        acceptor = new AutoAcceptor(statusBarItem, outputChannel, context);
 
         // ── Commands ──
 
@@ -86,11 +86,6 @@ export function activate(context: vscode.ExtensionContext): void {
                 'antigravity.terminalCommand.accept',
                 'antigravity.terminalCommand.run',
                 'notification.acceptPrimaryAction',
-                'chatEditing.acceptAllFiles',
-                'inlineChat.acceptChanges',
-                'antigravity.prioritized.agentAcceptAllInFile',
-                'antigravity.prioritized.agentAcceptFocusedHunk',
-                'antigravity.prioritized.supercompleteAccept',
                 'workbench.action.chat.accept',
                 'workbench.action.terminal.chat.runCommand',
             ];

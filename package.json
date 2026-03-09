@@ -2,7 +2,7 @@
   "name": "auto-accept-antigravity",
   "displayName": "Antigravity-AutoAccept",
   "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code — zero config, no launch flags needed",
-  "version": "0.7.2",
+  "version": "0.7.6",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",

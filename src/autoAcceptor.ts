@@ -41,7 +41,7 @@ export class AutoAcceptor implements vscode.Disposable {
     private lastActivity = '';
 
     /**
-     * ALL known accept/approve/run commands across all VS Code AI extensions.
+     * ALL known accept/approve/run commands across Antigravity.
      * Grouped by priority (most important first).
      */
     private readonly criticalAcceptCommands: string[] = [
@@ -49,48 +49,41 @@ export class AutoAcceptor implements vscode.Disposable {
         'antigravity.agent.acceptAgentStep',
         'antigravity.agent.acceptAllAgentSteps',
         'antigravity.command.accept',
-        'antigravity.terminal.accept', // User provided snippet
         'antigravity.terminalCommand.accept',
         'antigravity.terminalCommand.run',
+
+        // ── Antigravity hunk-level acceptance ──
+        'antigravity.prioritized.agentAcceptFocusedHunk',
 
         // ── Notification acceptance (catches "Allow", "Run", "Yes" buttons) ──
         'notification.acceptPrimaryAction',
         'notifications.acceptPrimaryAction',
-
-        // ── Chat editing acceptance ──
-        'chatEditing.acceptAllFiles',
-        'chatEditing.acceptFile',
-
-        // ── Inline chat ──
-        'inlineChat.acceptChanges',
-        'inlineChat.accept',
     ];
 
     private readonly secondaryAcceptCommands: string[] = [
-        // ── Antigravity specific ──
-        'antigravity.prioritized.agentAcceptAllInFile',
-        'antigravity.prioritized.agentAcceptFocusedHunk',
-        'antigravity.prioritized.supercompleteAccept',
-        'antigravity.prioritized.agentAcceptAllInAllFiles',
-
         // ── VS Code built-in chat / editing ──
         'workbench.action.chat.accept',
         'workbench.action.chat.submit',
 
         // ── Terminal suggestions ──
         'workbench.action.terminal.chat.runCommand',
-        'workbench.action.terminal.acceptSelectedSuggestion',
-        'workbench.action.terminal.acceptSelectedSuggestionEnter',
         'workbench.action.terminal.chat.acceptCommand',
         'workbench.action.terminal.chat.insertCommand',
-
-        // ── GitHub Copilot ──
-        'github.copilot.acceptCursorPanelSolution',
-        'github.copilot.acceptPanelSolution',
 
         // ── Notification handling ──
         'notifications.clearAll',
         'notification.clear',
+    ];
+
+    /**
+     * Commands used to move focus to the agent panel before accepting.
+     * antigravity.agent.acceptAgentStep requires !editorTextFocus,
+     * so we must shift focus away from the editor first.
+     */
+    private readonly focusCommands: string[] = [
+        'workbench.action.focusAuxiliaryBar',
+        'workbench.action.focusSideBar',
+        'workbench.action.focusPanel',
     ];
 
     /**
@@ -104,29 +97,8 @@ export class AutoAcceptor implements vscode.Disposable {
         ['chat.tools.global', 'autoApprove', true],
         ['chat.tools.terminal', 'enableAutoApprove', true],
         ['chat.tools.terminal', 'autoApprove', true],
-        ['chat.tools.edits', 'autoApprove', true],
         ['chat.agent', 'autoApprove', true],
         ['chat.agent', 'maxRequests', 999],
-
-        // GitHub Copilot auto-approve
-        ['github.copilot.chat.agent', 'autoApprove', true],
-        ['github.copilot.chat', 'autoApprove', true],
-        ['copilot.agent', 'autoApproveCommands', true],
-
-        // Gemini auto-approve
-        ['gemini', 'autoApprove', true],
-        ['gemini.agent', 'autoApprove', true],
-        ['google.gemini', 'autoApprove', true],
-        ['google.gemini.agent', 'autoApprove', true],
-
-        // Antigravity auto-approve
-        ['antigravity', 'autoApprove', true],
-        ['antigravity.agent', 'autoApprove', true],
-
-        // Claude Dev / Roo Code auto-approve (cleanest bypass for tool confirmation)
-        ['cline', 'autoApprovalSettings', { enabled: true, maxRequests: 50, actions: { readFiles: true, editFiles: true, executeCommands: true, useBrowser: true, useMcp: true } }],
-        ['roocode', 'alwaysApprove', true],
-        ['roocode.autoApprovalSettings', 'enabled', true],
 
         // Tool-specific auto-approves
         ['chat.tools.run_command', 'autoApprove', true],
@@ -140,13 +112,16 @@ export class AutoAcceptor implements vscode.Disposable {
         ['security.workspace.trust', 'enabled', false],
     ];
 
-    constructor(statusBarItem: vscode.StatusBarItem, outputChannel: vscode.OutputChannel) {
-        if (!statusBarItem || !outputChannel) {
-            throw new Error('AutoAcceptor requires both a StatusBarItem and an OutputChannel.');
+    private context: vscode.ExtensionContext;
+
+    constructor(statusBarItem: vscode.StatusBarItem, outputChannel: vscode.OutputChannel, context: vscode.ExtensionContext) {
+        if (!statusBarItem || !outputChannel || !context) {
+            throw new Error('AutoAcceptor requires StatusBarItem, OutputChannel, and ExtensionContext.');
         }
 
         this.statusBarItem = statusBarItem;
         this.outputChannel = outputChannel;
+        this.context = context;
         this.updateStatusBar('off');
     }
 
@@ -176,6 +151,10 @@ export class AutoAcceptor implements vscode.Disposable {
             return;
         }
         if (this.isRunning) { return; }
+
+        if (!(await this.checkPaywallLimit())) {
+            return;
+        }
 
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
         const enablePolling = config.get<boolean>('enableCommandPolling', true);
@@ -284,6 +263,35 @@ export class AutoAcceptor implements vscode.Disposable {
         this.log(`Settings injection complete: ${applied} applied, ${skipped} skipped/already set.`);
     }
 
+    private async checkPaywallLimit(): Promise<boolean> {
+        // Payment removed for this version
+        return true;
+
+        /*
+        const isPro = this.context.globalState.get<boolean>('autoAcceptAgent.isPro', false);
+        if (isPro) return true;
+
+        const lifetimeExecutions = this.context.globalState.get<number>('autoAcceptAgent.lifetimeExecutions', 0);
+        const totalExecutions = lifetimeExecutions + this.executedCount;
+
+        if (totalExecutions >= 10) {
+            if (this.isRunning) {
+                this.stop();
+            }
+            vscode.window.showInformationMessage('You have used your 10 free Auto Accept runs. Upgrade to Pro to unlock unlimited usage!');
+            vscode.commands.executeCommand('autoAcceptAgent.showPaywall');
+            return false;
+        }
+
+        if (this.executedCount > 0) {
+            await this.context.globalState.update('autoAcceptAgent.lifetimeExecutions', totalExecutions);
+            this.executedCount = 0; // reset local tally after saving to global
+        }
+        
+        return true;
+        */
+    }
+
     // ── Strategy 2: Aggressive Command Polling ────────────
 
     private startCommandPolling(): void {
@@ -293,20 +301,49 @@ export class AutoAcceptor implements vscode.Disposable {
         const intervalMs = config.get<number>('pollIntervalMs', 800);
 
         // Fast poll for critical commands (accept agent steps, notifications)
-        this.fastPollInterval = setInterval(() => this.fastPoll(), Math.max(300, intervalMs / 2));
+        this.fastPollInterval = setInterval(() => this.fastPoll(), Math.max(200, intervalMs / 2));
 
-        // Standard poll for all commands
+        // Standard poll for all commands (includes focus-aware accept)
         this.pollInterval = setInterval(() => this.fullPoll(), intervalMs);
 
-        this.log(`Command polling started: fast=${Math.max(300, intervalMs / 2)}ms, full=${intervalMs}ms`);
+        this.log(`Command polling started: fast=${Math.max(200, intervalMs / 2)}ms, full=${intervalMs}ms`);
     }
 
     /**
-     * Fast poll — only fires the most critical accept commands.
+     * Focus-aware accept — shifts focus to agent panel, fires accept, restores.
+     * This is the key fix: antigravity.agent.acceptAgentStep requires !editorTextFocus.
+     */
+    private async focusAndAccept(): Promise<void> {
+        if (!this.isRunning || this.isDisposed) { return; }
+
+        try {
+            // Try each focus target to move focus away from editor
+            for (const focusCmd of this.focusCommands) {
+                if (this.isDisposed || !this.isRunning) { break; }
+                try {
+                    await vscode.commands.executeCommand(focusCmd);
+                    // Brief delay to let focus settle
+                    await new Promise(r => setTimeout(r, 50));
+
+                    // Now fire the accept command while focus is on the panel
+                    await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
+                    await vscode.commands.executeCommand('antigravity.agent.acceptAllAgentSteps');
+                } catch {
+                    // Focus command may not apply — try next
+                }
+            }
+        } catch {
+            // Silent — best effort
+        }
+    }
+
+    /**
+     * Fast poll — fires critical accept commands directly.
      * Runs at double speed to catch approval prompts immediately.
      */
     private async fastPoll(): Promise<void> {
         if (!this.isRunning || this.isDisposed) { return; }
+        if (!(await this.checkPaywallLimit())) { return; }
 
         for (const cmd of this.criticalAcceptCommands) {
             if (this.isDisposed || !this.isRunning) { break; }
@@ -319,17 +356,23 @@ export class AutoAcceptor implements vscode.Disposable {
     }
 
     /**
-     * Full poll — fires all accept commands including secondary ones.
+     * Full poll — fires all accept commands including focus-aware accept
+     * and secondary commands.
      */
     private async fullPoll(): Promise<void> {
         if (this.isPollInProgress || !this.isRunning || this.isDisposed) {
             return;
         }
 
+        if (!(await this.checkPaywallLimit())) { return; }
+
         this.isPollInProgress = true;
 
         try {
-            // Fire critical commands first
+            // First: focus-aware accept (the key strategy)
+            await this.focusAndAccept();
+
+            // Then: fire critical commands directly (some may work without focus)
             for (const cmd of this.criticalAcceptCommands) {
                 if (this.isDisposed || !this.isRunning) { break; }
                 try {
@@ -365,6 +408,7 @@ export class AutoAcceptor implements vscode.Disposable {
         // This catches "Run", "Allow", "Yes", "Accept" buttons on notifications
         this.notificationPollInterval = setInterval(async () => {
             if (!this.isRunning || this.isDisposed) { return; }
+            if (!(await this.checkPaywallLimit())) { return; }
 
             try {
                 // Try accepting the primary action on any visible notification
@@ -392,13 +436,40 @@ export class AutoAcceptor implements vscode.Disposable {
         if (vscode.window.onDidStartTerminalShellExecution) {
             this.trackingDisposables.push(
                 vscode.window.onDidStartTerminalShellExecution(async (e) => {
-                    if (this.isRunning) {
-                        this.executedCount++;
-                        this.lastActivity = e.execution.commandLine.value || 'terminal command';
-                        this.log(`Terminal command detected: ${this.lastActivity} (total: ${this.executedCount})`);
-                        // Immediately fire accept commands
-                        await this.fastPoll();
+                    if (!this.isRunning) { return; } // Only proceed if running
+
+                    const commandLine = (e.execution.commandLine.value || '').trim();
+                    if (!commandLine) return;
+
+                    // Check block list with word boundaries
+                    const config = vscode.workspace.getConfiguration('autoAcceptAgent');
+                    const blockedCommands = config.get<string[]>('blockedCommands', []);
+
+                    for (const blocked of blockedCommands) {
+                        if (!blocked) continue;
+                        try {
+                            // Match the blocked term as a whole word
+                            const escapedBlocked = blocked.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const regex = new RegExp(`(^|\\s|['"])${escapedBlocked}($|\\s|['"])`, 'i');
+                            if (regex.test(commandLine)) {
+                                this.log(`🚨 BLOCKED dangerous command: "${commandLine}" (matched item in block list: "${blocked}")`);
+                                vscode.window.showWarningMessage(`AutoAccept-Antigravity: Blocked dangerous command "${blocked}"`);
+                                return;
+                            }
+                        } catch (err) {
+                            // Fallback to simple include if regex fails
+                            if (commandLine.toLowerCase().includes(blocked.toLowerCase())) {
+                                this.log(`🚨 BLOCKED dangerous command (Fallback): "${commandLine}"`);
+                                return;
+                            }
+                        }
                     }
+
+                    this.executedCount++;
+                    this.lastActivity = commandLine;
+                    this.log(`✅ Terminal command approved: ${commandLine}`);
+                    // Immediately fire accept commands
+                    await this.fastPoll();
                 })
             );
         }
@@ -412,9 +483,6 @@ export class AutoAcceptor implements vscode.Disposable {
                     setTimeout(async () => {
                         try {
                             await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
-                            await vscode.commands.executeCommand('antigravity.prioritized.agentAcceptAllInFile');
-                            await vscode.commands.executeCommand('chatEditing.acceptAllFiles');
-                            await vscode.commands.executeCommand('inlineChat.acceptChanges');
                         } catch {
                             // Not applicable
                         }
@@ -430,7 +498,6 @@ export class AutoAcceptor implements vscode.Disposable {
                     setTimeout(async () => {
                         try {
                             await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
-                            await vscode.commands.executeCommand('antigravity.prioritized.agentAcceptAllInFile');
                         } catch {
                             // Not applicable
                         }
@@ -472,7 +539,7 @@ export class AutoAcceptor implements vscode.Disposable {
         this.trackingDisposables.push(
             vscode.workspace.onDidChangeTextDocument((e) => {
                 if (this.isRunning && e.contentChanges.length > 0) {
-                    this.executedCount++;
+                    // Do not increment executedCount here as it triggers on every keystroke
                     this.lastActivity = `Edited ${e.document.fileName.split(/[\\/]/).pop()}`;
                 }
             })
@@ -520,13 +587,16 @@ export class AutoAcceptor implements vscode.Disposable {
 
     private async checkPermissionButtons(): Promise<void> {
         if (!this.isRunning || this.isDisposed || this.isCdpBusy) return;
+        if (!(await this.checkPaywallLimit())) return;
+
         this.isCdpBusy = true;
 
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
         const customTexts = config.get<string[]>('customButtonTexts', []);
 
         const scriptGenerator = (canExpand: boolean) => {
-            return `var CAN_EXPAND = ${canExpand};\n` + this.buildPermissionScript(customTexts);
+            const blockedCommands = config.get<string[]>('blockedCommands', []);
+            return `var CAN_EXPAND = ${canExpand};\nvar BLOCKED_CMDS = ${JSON.stringify(blockedCommands)};\n` + this.buildPermissionScript(customTexts);
         };
 
         try {
@@ -690,6 +760,8 @@ export class AutoAcceptor implements vscode.Disposable {
         return `
 (function() {
     var BUTTON_TEXTS = ${JSON.stringify(allTexts)};
+    var BLOCKED_COMMANDS = typeof BLOCKED_CMDS !== 'undefined' ? BLOCKED_CMDS : [];
+
     if (!document.querySelector('.react-app-container') && 
         !document.querySelector('[class*="agent"]') &&
         !document.querySelector('[data-vscode-context]')) {
@@ -740,6 +812,45 @@ export class AutoAcceptor implements vscode.Disposable {
                         clickable.classList.contains('loading') || clickable.querySelector('.codicon-loading')) {
                         return null;
                     }
+
+                    // SAFETY CHECK: When clicking "Run" or "Accept", check for blocked commands nearby in the UI text
+                    if (text === 'run' || text === 'accept') {
+                        // Look for the code block or command text near the button (container-aware)
+                        var container = clickable.parentElement;
+                        // Try to find a reasonably small container that might have the command
+                        for (var depth = 0; depth < 4; depth++) {
+                            if (!container || container === document.body) break;
+                            var cClass = (container.className || '');
+                            if (typeof cClass === 'string' && (cClass.includes('step') || cClass.includes('chat') || cClass.includes('response'))) break;
+                            container = container.parentElement;
+                        }
+                        
+                        var containerText = (container || document.body).innerText || '';
+                        for (var i = 0; i < BLOCKED_COMMANDS.length; i++) {
+                            var bCmd = BLOCKED_COMMANDS[i];
+                            if (!bCmd) continue;
+                            
+                            // Use a simpler string check within the container context to avoid complex regex issues in CDP
+                            // We check for the word with boundaries manually
+                            var lowerText = containerText.toLowerCase();
+                            var lowerCmd = bCmd.toLowerCase();
+                            var idx = lowerText.indexOf(lowerCmd);
+                            
+                            if (idx !== -1) {
+                                // Basic word boundary check
+                                var charBefore = idx > 0 ? lowerText[idx - 1] : ' ';
+                                var charAfter = (idx + lowerCmd.length) < lowerText.length ? lowerText[idx + lowerCmd.length] : ' ';
+                                
+                                var isWordBefore = /[a-z0-9]/.test(charBefore);
+                                var isWordAfter = /[a-z0-9]/.test(charAfter);
+                                
+                                if (!isWordBefore && !isWordAfter) {
+                                    return 'blocked:' + bCmd;
+                                }
+                            }
+                        }
+                    }
+
                     var lastClickTime = parseInt(clickable.getAttribute('data-aa-t') || '0', 10);
                     if (lastClickTime && (Date.now() - lastClickTime < 5000)) {
                         return null;
