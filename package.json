@@ -2,7 +2,7 @@
   "name": "auto-accept-antigravity",
   "displayName": "Antigravity-AutoAccept",
   "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code — zero config, no launch flags needed",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",
@@ -90,6 +90,19 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically accept primary actions on approval notifications (Run, Allow, Yes)."
+        },
+        "autoAcceptAgent.enableCDP": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable optional CDP fallback to click approval buttons directly in webviews when command polling cannot reach them. This is off by default for zero-config usage."
+        },
+        "autoAcceptAgent.customButtonTexts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional button text labels to auto-click in the agent UI (for custom/localized prompts)."
         },
         "autoAcceptAgent.blockedCommands": {
           "type": "array",

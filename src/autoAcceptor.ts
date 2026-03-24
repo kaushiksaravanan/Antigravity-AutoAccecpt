@@ -14,7 +14,8 @@ import WebSocket = require('ws');
  * Strategy 4: Event-Driven Reactions — Reacts to terminal activity,
  *             document changes, and editor state changes.
  *
- * NO Chrome DevTools Protocol. NO --remote-debugging-port flag.
+ * Includes optional Chrome DevTools Protocol fallback for webview clicks,
+ * but does not require launch flags in normal usage.
  */
 export class AutoAcceptor implements vscode.Disposable {
     private isRunning = false;
@@ -39,6 +40,12 @@ export class AutoAcceptor implements vscode.Disposable {
     private executedCount = 0;
     private settingsApplied = false;
     private lastActivity = '';
+    private readonly originalGlobalSettings = new Map<string, {
+        section: string;
+        key: string;
+        hadValue: boolean;
+        value: unknown;
+    }>();
 
     /**
      * ALL known accept/approve/run commands across Antigravity.
@@ -127,7 +134,7 @@ export class AutoAcceptor implements vscode.Disposable {
 
     // ── Public API ─────────────────────────────────────────
 
-    public toggle(): void {
+    public async toggle(): Promise<void> {
         if (this.isDisposed) {
             this.log('Cannot toggle: AutoAcceptor has been disposed.');
             return;
@@ -135,9 +142,9 @@ export class AutoAcceptor implements vscode.Disposable {
 
         try {
             if (this.isRunning) {
-                this.stop();
+                await this.stop();
             } else {
-                this.start();
+                await this.start();
             }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -158,6 +165,8 @@ export class AutoAcceptor implements vscode.Disposable {
 
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
         const enablePolling = config.get<boolean>('enableCommandPolling', true);
+        const autoConfigureSettings = config.get<boolean>('autoConfigureSettings', true);
+        const interceptNotifications = config.get<boolean>('interceptNotifications', true);
 
         if (!enablePolling) {
             this.log('Command polling is disabled in settings.');
@@ -169,14 +178,31 @@ export class AutoAcceptor implements vscode.Disposable {
 
         this.isRunning = true;
 
-        // Strategy 1: Auto-configure settings to skip permission prompts
-        await this.applyAutoApproveSettings();
+        if (autoConfigureSettings) {
+            try {
+                // Strategy 1: Auto-configure settings to skip permission prompts
+                await this.applyAutoApproveSettings();
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.isRunning = false;
+                this.updateStatusBar('off');
+                this.log(`Failed to apply auto-approve settings: ${msg}`);
+                vscode.window.showErrorMessage(`AutoAccept-Antigravity failed to start: ${msg}`);
+                return;
+            }
+        } else {
+            this.log('Skipping settings injection (autoConfigureSettings = false).');
+        }
 
         // Strategy 2: Start aggressive command polling
         this.startCommandPolling();
 
         // Strategy 3: Start notification interception
-        this.startNotificationPolling();
+        if (interceptNotifications) {
+            this.startNotificationPolling();
+        } else {
+            this.log('Skipping notification interception (interceptNotifications = false).');
+        }
 
         // Strategy 4: Setup event-driven reactions
         this.setupEventTracking();
@@ -191,16 +217,19 @@ export class AutoAcceptor implements vscode.Disposable {
         this.log('AutoAccept v2 started — settings injected, polling active, event tracking on.');
     }
 
-    public stop(): void {
+    public async stop(notifyUser = true): Promise<void> {
         if (this.isDisposed) { return; }
 
         try {
             this.log('Stopping AutoAccept-Antigravity...');
+            this.isRunning = false;
             this.stopAllPolling();
             this.disposeTracking();
-            this.isRunning = false;
+            await this.restoreOriginalSettings();
             this.updateStatusBar('off');
-            vscode.window.showInformationMessage('AutoAccept-Antigravity: Stopped.');
+            if (notifyUser) {
+                vscode.window.showInformationMessage('AutoAccept-Antigravity: Stopped.');
+            }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
             this.log(`Stop error: ${msg}`);
@@ -211,15 +240,27 @@ export class AutoAcceptor implements vscode.Disposable {
 
     public dispose(): void {
         if (this.isDisposed) { return; }
-        this.isDisposed = true;
+
+        this.isRunning = false;
+
+        const restorePromise = this.restoreOriginalSettings();
 
         try { this.stopAllPolling(); } catch { /* best-effort */ }
         try { this.disposeTracking(); } catch { /* best-effort */ }
+        this.isDisposed = true;
+        void restorePromise.catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`AutoAccept-Antigravity settings restore during dispose failed: ${msg}`);
+        });
         try { this.statusBarItem?.dispose(); } catch { /* best-effort */ }
         try { this.outputChannel?.dispose(); } catch { /* best-effort */ }
     }
 
     // ── Strategy 1: Settings Injection ────────────────────
+
+    private getSettingId(section: string, key: string): string {
+        return `${section}.${key}`;
+    }
 
     private async applyAutoApproveSettings(): Promise<void> {
         if (this.settingsApplied) { return; }
@@ -229,9 +270,20 @@ export class AutoAcceptor implements vscode.Disposable {
         let skipped = 0;
 
         for (const [section, key, value] of this.autoApproveSettings) {
+            const settingId = this.getSettingId(section, key);
             try {
                 const config = vscode.workspace.getConfiguration(section);
                 const inspect = config.inspect(key);
+
+                if (!this.originalGlobalSettings.has(settingId)) {
+                    const hadValue = inspect?.globalValue !== undefined;
+                    this.originalGlobalSettings.set(settingId, {
+                        section,
+                        key,
+                        hadValue,
+                        value: inspect?.globalValue,
+                    });
+                }
 
                 if (inspect) {
                     // Setting exists — update it
@@ -261,6 +313,47 @@ export class AutoAcceptor implements vscode.Disposable {
 
         this.settingsApplied = true;
         this.log(`Settings injection complete: ${applied} applied, ${skipped} skipped/already set.`);
+    }
+
+    private async restoreOriginalSettings(): Promise<void> {
+        if (!this.settingsApplied) {
+            return;
+        }
+
+        if (this.originalGlobalSettings.size === 0) {
+            this.settingsApplied = false;
+            return;
+        }
+
+        this.log('Restoring original auto-approve settings...');
+        let restored = 0;
+        let unchanged = 0;
+        let failed = 0;
+
+        for (const [settingId, snapshot] of this.originalGlobalSettings.entries()) {
+            try {
+                const config = vscode.workspace.getConfiguration(snapshot.section);
+                const inspect = config.inspect(snapshot.key);
+                const currentGlobal = inspect?.globalValue;
+                const targetValue = snapshot.hadValue ? snapshot.value : undefined;
+
+                if (currentGlobal !== targetValue) {
+                    await config.update(snapshot.key, targetValue, vscode.ConfigurationTarget.Global);
+                    this.log(`  Restored ${settingId} to ${JSON.stringify(targetValue)}`);
+                    restored++;
+                } else {
+                    unchanged++;
+                }
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.log(`  Failed restoring ${settingId}: ${msg}`);
+                failed++;
+            }
+        }
+
+        this.originalGlobalSettings.clear();
+        this.settingsApplied = false;
+        this.log(`Settings restore complete: ${restored} restored, ${unchanged} unchanged, ${failed} failed.`);
     }
 
     private async checkPaywallLimit(): Promise<boolean> {
@@ -300,13 +393,37 @@ export class AutoAcceptor implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
         const intervalMs = config.get<number>('pollIntervalMs', 800);
 
+        if (this.fastPollInterval) {
+            clearInterval(this.fastPollInterval);
+            this.fastPollInterval = null;
+        }
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+
         // Fast poll for critical commands (accept agent steps, notifications)
-        this.fastPollInterval = setInterval(() => this.fastPoll(), Math.max(200, intervalMs / 2));
+        this.fastPollInterval = setInterval(() => {
+            void this.fastPoll().catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.log(`Fast poll interval error: ${msg}`);
+            });
+        }, Math.max(200, intervalMs / 2));
 
         // Standard poll for all commands (includes focus-aware accept)
-        this.pollInterval = setInterval(() => this.fullPoll(), intervalMs);
+        this.pollInterval = setInterval(() => {
+            void this.fullPoll().catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.log(`Full poll interval error: ${msg}`);
+            });
+        }, intervalMs);
 
         this.log(`Command polling started: fast=${Math.max(200, intervalMs / 2)}ms, full=${intervalMs}ms`);
+    }
+
+    private shouldInterceptNotifications(): boolean {
+        const config = vscode.workspace.getConfiguration('autoAcceptAgent');
+        return config.get<boolean>('interceptNotifications', true);
     }
 
     /**
@@ -344,9 +461,11 @@ export class AutoAcceptor implements vscode.Disposable {
     private async fastPoll(): Promise<void> {
         if (!this.isRunning || this.isDisposed) { return; }
         if (!(await this.checkPaywallLimit())) { return; }
+        const interceptNotifications = this.shouldInterceptNotifications();
 
         for (const cmd of this.criticalAcceptCommands) {
             if (this.isDisposed || !this.isRunning) { break; }
+            if (!interceptNotifications && cmd.toLowerCase().includes('notification')) { continue; }
             try {
                 await vscode.commands.executeCommand(cmd);
             } catch {
@@ -365,6 +484,7 @@ export class AutoAcceptor implements vscode.Disposable {
         }
 
         if (!(await this.checkPaywallLimit())) { return; }
+        const interceptNotifications = this.shouldInterceptNotifications();
 
         this.isPollInProgress = true;
 
@@ -375,6 +495,7 @@ export class AutoAcceptor implements vscode.Disposable {
             // Then: fire critical commands directly (some may work without focus)
             for (const cmd of this.criticalAcceptCommands) {
                 if (this.isDisposed || !this.isRunning) { break; }
+                if (!interceptNotifications && cmd.toLowerCase().includes('notification')) { continue; }
                 try {
                     await vscode.commands.executeCommand(cmd);
                 } catch {
@@ -385,6 +506,7 @@ export class AutoAcceptor implements vscode.Disposable {
             // Then secondary commands
             for (const cmd of this.secondaryAcceptCommands) {
                 if (this.isDisposed || !this.isRunning) { break; }
+                if (!interceptNotifications && cmd.toLowerCase().includes('notification')) { continue; }
                 try {
                     await vscode.commands.executeCommand(cmd);
                 } catch {
@@ -404,25 +526,36 @@ export class AutoAcceptor implements vscode.Disposable {
     private startNotificationPolling(): void {
         if (this.isDisposed) { return; }
 
+        if (this.notificationPollInterval) {
+            clearInterval(this.notificationPollInterval);
+            this.notificationPollInterval = null;
+        }
+
         // Aggressively try to accept notification primary actions
         // This catches "Run", "Allow", "Yes", "Accept" buttons on notifications
-        this.notificationPollInterval = setInterval(async () => {
-            if (!this.isRunning || this.isDisposed) { return; }
-            if (!(await this.checkPaywallLimit())) { return; }
+        this.notificationPollInterval = setInterval(() => {
+            void (async () => {
+                if (!this.isRunning || this.isDisposed) { return; }
+                if (!this.shouldInterceptNotifications()) { return; }
+                if (!(await this.checkPaywallLimit())) { return; }
 
-            try {
-                // Try accepting the primary action on any visible notification
-                await vscode.commands.executeCommand('notification.acceptPrimaryAction');
-            } catch {
-                // No notification to accept
-            }
+                try {
+                    // Try accepting the primary action on any visible notification
+                    await vscode.commands.executeCommand('notification.acceptPrimaryAction');
+                } catch {
+                    // No notification to accept
+                }
 
-            try {
-                // Also try the notifications (plural) variant
-                await vscode.commands.executeCommand('notifications.acceptPrimaryAction');
-            } catch {
-                // No notification
-            }
+                try {
+                    // Also try the notifications (plural) variant
+                    await vscode.commands.executeCommand('notifications.acceptPrimaryAction');
+                } catch {
+                    // No notification
+                }
+            })().catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.log(`Notification poll error: ${msg}`);
+            });
         }, 400); // Very fast — catch notifications before user has to click
 
         this.log('Notification interception started (400ms interval).');
@@ -438,7 +571,7 @@ export class AutoAcceptor implements vscode.Disposable {
                 vscode.window.onDidStartTerminalShellExecution(async (e) => {
                     if (!this.isRunning) { return; } // Only proceed if running
 
-                    const commandLine = (e.execution.commandLine.value || '').trim();
+                    const commandLine = (e?.execution?.commandLine?.value || '').trim();
                     if (!commandLine) return;
 
                     // Check block list with word boundaries
@@ -480,12 +613,18 @@ export class AutoAcceptor implements vscode.Disposable {
             vscode.window.onDidChangeActiveTextEditor(async () => {
                 if (this.isRunning && !this.isDisposed) {
                     // Small delay to let the UI update, then accept
-                    setTimeout(async () => {
-                        try {
-                            await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
-                        } catch {
-                            // Not applicable
-                        }
+                    setTimeout(() => {
+                        void (async () => {
+                            if (!this.isRunning || this.isDisposed) { return; }
+                            try {
+                                await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
+                            } catch {
+                                // Not applicable
+                            }
+                        })().catch((err: unknown) => {
+                            const msg = err instanceof Error ? err.message : String(err);
+                            this.log(`Active editor reaction error: ${msg}`);
+                        });
                     }, 200);
                 }
             })
@@ -495,12 +634,18 @@ export class AutoAcceptor implements vscode.Disposable {
         this.trackingDisposables.push(
             vscode.window.onDidChangeVisibleTextEditors(async () => {
                 if (this.isRunning && !this.isDisposed) {
-                    setTimeout(async () => {
-                        try {
-                            await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
-                        } catch {
-                            // Not applicable
-                        }
+                    setTimeout(() => {
+                        void (async () => {
+                            if (!this.isRunning || this.isDisposed) { return; }
+                            try {
+                                await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
+                            } catch {
+                                // Not applicable
+                            }
+                        })().catch((err: unknown) => {
+                            const msg = err instanceof Error ? err.message : String(err);
+                            this.log(`Visible editor reaction error: ${msg}`);
+                        });
                     }, 300);
                 }
             })
@@ -511,15 +656,28 @@ export class AutoAcceptor implements vscode.Disposable {
             vscode.window.onDidOpenTerminal(async () => {
                 if (this.isRunning && !this.isDisposed) {
                     this.log('New terminal opened — attempting acceptance...');
-                    setTimeout(async () => {
-                        try {
-                            await vscode.commands.executeCommand('antigravity.terminalCommand.accept');
-                            await vscode.commands.executeCommand('antigravity.terminalCommand.run');
-                            await vscode.commands.executeCommand('workbench.action.terminal.chat.runCommand');
-                            await vscode.commands.executeCommand('notification.acceptPrimaryAction');
-                        } catch {
-                            // Not applicable
-                        }
+                    setTimeout(() => {
+                        void (async () => {
+                            if (!this.isRunning || this.isDisposed) { return; }
+                            const interceptNotifications = this.shouldInterceptNotifications();
+                            const cmds = [
+                                'antigravity.terminalCommand.accept',
+                                'antigravity.terminalCommand.run',
+                                'workbench.action.terminal.chat.runCommand',
+                                'notification.acceptPrimaryAction',
+                            ];
+                            for (const cmd of cmds) {
+                                if (!interceptNotifications && cmd.toLowerCase().includes('notification')) { continue; }
+                                try {
+                                    await vscode.commands.executeCommand(cmd);
+                                } catch {
+                                    // Not applicable
+                                }
+                            }
+                        })().catch((err: unknown) => {
+                            const msg = err instanceof Error ? err.message : String(err);
+                            this.log(`Open terminal reaction error: ${msg}`);
+                        });
                     }, 300);
                 }
             })
@@ -572,15 +730,24 @@ export class AutoAcceptor implements vscode.Disposable {
     // ── Strategy 5: CDP Fallback ──────────────────────────
 
     private startCDPPolling(): void {
+        if (this.isDisposed) return;
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
-        const enableCDP = config.get<boolean>('enableCDP', true); // enabled by default as fallback
+        const enableCDP = config.get<boolean>('enableCDP', false); // opt-in fallback
         if (!enableCDP) {
             this.log('CDP Fallback polling is disabled in settings.');
             return;
         }
 
+        if (this.cdpIntervalId) {
+            clearInterval(this.cdpIntervalId);
+            this.cdpIntervalId = null;
+        }
+
         this.cdpIntervalId = setInterval(() => {
-            this.checkPermissionButtons();
+            void this.checkPermissionButtons().catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.log(`CDP poll error: ${msg}`);
+            });
         }, 1500); // Check every 1.5s
         this.log('CDP Fallback polling started (1500ms cycle).');
     }
@@ -622,8 +789,13 @@ export class AutoAcceptor implements vscode.Disposable {
     private cdpGetBrowserWsUrl(port: number): Promise<string | null> {
         return new Promise((resolve, reject) => {
             const req = http.get({ hostname: '127.0.0.1', port, path: '/json/version', timeout: 800 }, (res) => {
+                if (res.statusCode !== 200) {
+                    res.resume(); // drain the response to free memory
+                    return reject(new Error(`HTTP ${res.statusCode}`));
+                }
                 let data = '';
                 res.on('data', chunk => data += chunk);
+                res.on('error', reject);
                 res.on('end', () => {
                     try {
                         const info = JSON.parse(data);
@@ -636,12 +808,12 @@ export class AutoAcceptor implements vscode.Disposable {
         });
     }
 
-    private multiplexCdpWebviews(port: number, scriptGenerator: (canExpand: boolean) => string): Promise<boolean> {
-        return new Promise(async (resolve) => {
-            try {
-                const browserWsUrl = await this.cdpGetBrowserWsUrl(port);
-                if (!browserWsUrl) return resolve(false);
+    private async multiplexCdpWebviews(port: number, scriptGenerator: (canExpand: boolean) => string): Promise<boolean> {
+        try {
+            const browserWsUrl = await this.cdpGetBrowserWsUrl(port);
+            if (!browserWsUrl) return false;
 
+            return await new Promise<boolean>((resolve) => {
                 const ws = new WebSocket(browserWsUrl);
                 const timeout = setTimeout(() => { ws.close(); resolve(false); }, 5000);
 
@@ -650,20 +822,33 @@ export class AutoAcceptor implements vscode.Disposable {
 
                 function send(method: string, params: any = {}, sessionId: string | null = null): Promise<any> {
                     return new Promise((res, rej) => {
+                        if (ws.readyState !== WebSocket.OPEN) {
+                            return rej(new Error('WebSocket not open'));
+                        }
                         const id = msgId++;
                         const timer = setTimeout(() => { delete pending[id]; rej(new Error('timeout')); }, 2000);
                         pending[id] = { res: (v) => { clearTimeout(timer); res(v); }, rej };
                         const payload: any = { id, method, params };
                         if (sessionId) payload.sessionId = sessionId;
-                        ws.send(JSON.stringify(payload));
+                        try {
+                            ws.send(JSON.stringify(payload));
+                        } catch (err) {
+                            clearTimeout(timer);
+                            delete pending[id];
+                            rej(err);
+                        }
                     });
                 }
 
                 ws.on('message', (raw) => {
-                    const msg = JSON.parse(raw.toString());
-                    if (msg.id && pending[msg.id]) {
-                        pending[msg.id].res(msg);
-                        delete pending[msg.id];
+                    try {
+                        const msg = JSON.parse(raw.toString());
+                        if (msg.id && pending[msg.id]) {
+                            pending[msg.id].res(msg);
+                            delete pending[msg.id];
+                        }
+                    } catch {
+                        // Malformed message — ignore
                     }
                 });
 
@@ -747,8 +932,8 @@ export class AutoAcceptor implements vscode.Disposable {
                         clearTimeout(timeout); ws.close(); resolve(false);
                     }
                 });
-            } catch (e) { resolve(false); }
-        });
+            });
+        } catch (e) { return false; }
     }
 
     private buildPermissionScript(customTexts: string[]): string {
@@ -865,6 +1050,7 @@ export class AutoAcceptor implements vscode.Disposable {
     for (var t = 0; t < BUTTON_TEXTS.length; t++) {
         var btn = findButton(document.body, BUTTON_TEXTS[t]);
         if (btn) {
+            if (typeof btn === 'string') { return btn; }
             btn.setAttribute('data-aa-t', '' + Date.now());
             btn.click();
             return 'clicked:' + BUTTON_TEXTS[t];
@@ -876,6 +1062,7 @@ export class AutoAcceptor implements vscode.Disposable {
         for (var e = 0; e < expandTexts.length; e++) {
             var expBtn = findButton(document.body, expandTexts[e]);
             if (expBtn) {
+                if (typeof expBtn === 'string') { return expBtn; }
                 expBtn.setAttribute('data-aa-t', '' + Date.now());
                 expBtn.click();
                 return 'clicked:' + expandTexts[e];

@@ -9,3 +9,15 @@ tsconfig.json
 **/*.map
 *.vsix
 test_extension.py
+agent_test_suite.md
+commands.json
+hello.ps1
+ls_full_data.txt
+ls_full_metadata.csv
+process_debug_info.txt
+settings.json
+settings_utf8.json
+test_commands_to_run.ps1
+test_file.txt
+test_monetization_script.js
+old vers/**

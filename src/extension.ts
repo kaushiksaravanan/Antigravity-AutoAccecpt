@@ -34,9 +34,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
         // ── Commands ──
 
-        const toggleCommand = vscode.commands.registerCommand('autoAcceptAgent.toggle', () => {
+        const toggleCommand = vscode.commands.registerCommand('autoAcceptAgent.toggle', async () => {
             try {
-                acceptor?.toggle();
+                await acceptor?.toggle();
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 outputChannel.appendLine(`Toggle command error: ${msg}`);
@@ -44,18 +44,18 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         });
 
-        const startCommand = vscode.commands.registerCommand('autoAcceptAgent.start', () => {
+        const startCommand = vscode.commands.registerCommand('autoAcceptAgent.start', async () => {
             try {
-                acceptor?.start();
+                await acceptor?.start();
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 vscode.window.showErrorMessage(`AutoAccept start failed: ${msg}`);
             }
         });
 
-        const stopCommand = vscode.commands.registerCommand('autoAcceptAgent.stop', () => {
+        const stopCommand = vscode.commands.registerCommand('autoAcceptAgent.stop', async () => {
             try {
-                acceptor?.stop();
+                await acceptor?.stop();
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 vscode.window.showErrorMessage(`AutoAccept stop failed: ${msg}`);
@@ -116,10 +116,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 }
 
-export function deactivate(): void {
+export async function deactivate(): Promise<void> {
     try {
         if (acceptor) {
-            acceptor.stop();
+            await acceptor.stop(false);
             acceptor = undefined;
         }
     } catch (err: unknown) {
