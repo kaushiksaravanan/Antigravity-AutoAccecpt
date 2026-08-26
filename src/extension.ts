@@ -6,124 +6,58 @@ let acceptor: AutoAcceptor | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
     try {
-        const outputChannel = vscode.window.createOutputChannel('Auto Accept Agent');
-        if (!outputChannel) {
-            vscode.window.showErrorMessage('AutoAccept-Antigravity: Failed to create output channel.');
-            return;
-        }
-        outputChannel.appendLine('AutoAccept-Antigravity v2 extension activated.');
+        const output = vscode.window.createOutputChannel('Auto Accept Agent');
+        output.appendLine('activated');
 
-        vscode.commands.getCommands(true).then(cmds => {
-            const relevant = cmds.filter(c => c.toLowerCase().includes('antigravity') || c.toLowerCase().includes('chat'));
-            outputChannel.appendLine(`Found interesting commands: \n${relevant.join('\n')}`);
-        });
-        console.log('AutoAccept-Antigravity v2 extension activated.');
+        const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+        statusBar.command = 'autoAcceptAgent.toggle';
 
-        const statusBarItem = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            100
-        );
-        if (!statusBarItem) {
-            outputChannel.appendLine('Failed to create status bar item.');
-            vscode.window.showErrorMessage('AutoAccept-Antigravity: Failed to create status bar item.');
-            return;
-        }
-        statusBarItem.command = 'autoAcceptAgent.toggle';
+        acceptor = new AutoAcceptor(statusBar, output, context);
 
-        acceptor = new AutoAcceptor(statusBarItem, outputChannel, context);
+        const cmd = (id: string, fn: () => Promise<void>) =>
+            vscode.commands.registerCommand(id, async () => {
+                try { await fn(); } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    vscode.window.showErrorMessage(`AutoAccept: ${msg}`);
+                }
+            });
 
-        // ── Commands ──
-
-        const toggleCommand = vscode.commands.registerCommand('autoAcceptAgent.toggle', async () => {
-            try {
-                await acceptor?.toggle();
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                outputChannel.appendLine(`Toggle command error: ${msg}`);
-                vscode.window.showErrorMessage(`AutoAccept-Antigravity toggle failed: ${msg}`);
-            }
-        });
-
-        const startCommand = vscode.commands.registerCommand('autoAcceptAgent.start', async () => {
-            try {
-                await acceptor?.start();
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                vscode.window.showErrorMessage(`AutoAccept start failed: ${msg}`);
-            }
-        });
-
-        const stopCommand = vscode.commands.registerCommand('autoAcceptAgent.stop', async () => {
-            try {
-                await acceptor?.stop();
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                vscode.window.showErrorMessage(`AutoAccept stop failed: ${msg}`);
-            }
-        });
-
-        const diagCommand = vscode.commands.registerCommand('autoAcceptAgent.diagnostics', async () => {
-            try {
-                await runDiagnostics(outputChannel);
-            } catch (err: unknown) {
-                const msg = err instanceof Error ? err.message : String(err);
-                outputChannel.appendLine(`Diagnostics error: ${msg}`);
-                vscode.window.showErrorMessage(`AutoAccept diagnostics failed: ${msg}`);
-            }
-        });
-
-        const paywallCommand = vscode.commands.registerCommand('autoAcceptAgent.showPaywall', async () => {
-            const { showPaywall } = await import('./paywallWebview.js');
-            showPaywall(context);
-        });
-
-        const acceptNowCommand = vscode.commands.registerCommand('autoAcceptAgent.acceptNow', async () => {
-            outputChannel.appendLine('Manual accept-all triggered...');
-            // Fire all known accept commands immediately
-            const allAcceptCommands = [
-                'antigravity.agent.acceptAgentStep',
-                'antigravity.command.accept',
-                'antigravity.terminalCommand.accept',
-                'antigravity.terminalCommand.run',
-                'notification.acceptPrimaryAction',
-                'workbench.action.chat.accept',
-                'workbench.action.terminal.chat.runCommand',
-            ];
-            for (const cmd of allAcceptCommands) {
-                try { await vscode.commands.executeCommand(cmd); } catch { /* ignore */ }
-            }
-            vscode.window.showInformationMessage('AutoAccept: Fired all accept commands.');
-        });
-
-        // Register everything for automatic disposal
         context.subscriptions.push(
-            statusBarItem, outputChannel,
-            toggleCommand, startCommand, stopCommand,
-            diagCommand, paywallCommand, acceptNowCommand,
+            cmd('autoAcceptAgent.toggle', () => acceptor!.toggle()),
+            cmd('autoAcceptAgent.start', () => acceptor!.start()),
+            cmd('autoAcceptAgent.stop', () => acceptor!.stop()),
+            cmd('autoAcceptAgent.diagnostics', () => runDiagnostics(output)),
+            cmd('autoAcceptAgent.showPaywall', async () => {
+                const { showPaywall } = await import('./paywallWebview.js');
+                showPaywall(context);
+            }),
+            cmd('autoAcceptAgent.acceptNow', async () => {
+                const cmds = [
+                    'antigravity.agent.acceptAgentStep',
+                    'antigravity.command.accept',
+                    'antigravity.terminalCommand.accept',
+                    'antigravity.terminalCommand.run',
+                    'notification.acceptPrimaryAction',
+                    'workbench.action.chat.accept',
+                    'workbench.action.terminal.chat.runCommand',
+                ];
+                for (const c of cmds) {
+                    try { await vscode.commands.executeCommand(c); } catch { }
+                }
+            }),
             acceptor
         );
 
-        // ── Auto-start on activation ──
-        acceptor.start().catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            outputChannel.appendLine(`Auto-start failed: ${msg}`);
-            console.log(`Auto-start failed: ${msg}`);
-        });
+        acceptor.start().catch(() => { });
 
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`AutoAccept-Antigravity activation failed: ${msg}`);
+        vscode.window.showErrorMessage(`AutoAccept activation failed: ${msg}`);
     }
 }
 
 export async function deactivate(): Promise<void> {
-    try {
-        if (acceptor) {
-            await acceptor.stop(false);
-            acceptor = undefined;
-        }
-    } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`AutoAccept-Antigravity deactivation error: ${msg}`);
-    }
+    // Cleanup is handled by context.subscriptions disposing AutoAcceptor.
+    // We just clear the reference here to avoid stale usage.
+    acceptor = undefined;
 }

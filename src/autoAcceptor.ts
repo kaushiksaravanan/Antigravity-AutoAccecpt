@@ -23,7 +23,7 @@ export class AutoAcceptor implements vscode.Disposable {
     private statusBarItem: vscode.StatusBarItem;
     private pollInterval: ReturnType<typeof setInterval> | null = null;
     private fastPollInterval: ReturnType<typeof setInterval> | null = null;
-    private notificationPollInterval: ReturnType<typeof setInterval> | null = null;
+
     private outputChannel: vscode.OutputChannel;
     private isPollInProgress = false;
     private trackingDisposables: vscode.Disposable[] = [];
@@ -76,21 +76,6 @@ export class AutoAcceptor implements vscode.Disposable {
         'workbench.action.terminal.chat.runCommand',
         'workbench.action.terminal.chat.acceptCommand',
         'workbench.action.terminal.chat.insertCommand',
-
-        // ── Notification handling ──
-        'notifications.clearAll',
-        'notification.clear',
-    ];
-
-    /**
-     * Commands used to move focus to the agent panel before accepting.
-     * antigravity.agent.acceptAgentStep requires !editorTextFocus,
-     * so we must shift focus away from the editor first.
-     */
-    private readonly focusCommands: string[] = [
-        'workbench.action.focusAuxiliaryBar',
-        'workbench.action.focusSideBar',
-        'workbench.action.focusPanel',
     ];
 
     /**
@@ -135,125 +120,86 @@ export class AutoAcceptor implements vscode.Disposable {
     // ── Public API ─────────────────────────────────────────
 
     public async toggle(): Promise<void> {
-        if (this.isDisposed) {
-            this.log('Cannot toggle: AutoAcceptor has been disposed.');
-            return;
-        }
-
+        if (this.isDisposed) return;
         try {
-            if (this.isRunning) {
-                await this.stop();
-            } else {
-                await this.start();
-            }
+            this.isRunning ? await this.stop() : await this.start();
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            this.log(`Toggle error: ${msg}`);
+            this.log(`toggle error: ${msg}`);
         }
     }
 
     public async start(): Promise<void> {
-        if (this.isDisposed) {
-            this.log('Cannot start: AutoAcceptor has been disposed.');
-            return;
-        }
-        if (this.isRunning) { return; }
-
-        if (!(await this.checkPaywallLimit())) {
-            return;
-        }
+        if (this.isDisposed || this.isRunning) return;
+        if (!(await this.checkPaywallLimit())) return;
 
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
-        const enablePolling = config.get<boolean>('enableCommandPolling', true);
-        const autoConfigureSettings = config.get<boolean>('autoConfigureSettings', true);
-        const interceptNotifications = config.get<boolean>('interceptNotifications', true);
-
-        if (!enablePolling) {
-            this.log('Command polling is disabled in settings.');
-            vscode.window.showWarningMessage(
-                'AutoAccept-Antigravity: Command polling is disabled in settings.'
-            );
+        if (!config.get<boolean>('enableCommandPolling', true)) {
+            this.log('polling disabled');
+            vscode.window.showWarningMessage('AutoAccept-Antigravity: Command polling disabled');
             return;
         }
 
         this.isRunning = true;
 
-        if (autoConfigureSettings) {
+        if (config.get<boolean>('autoConfigureSettings', true)) {
             try {
-                // Strategy 1: Auto-configure settings to skip permission prompts
                 await this.applyAutoApproveSettings();
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 this.isRunning = false;
                 this.updateStatusBar('off');
-                this.log(`Failed to apply auto-approve settings: ${msg}`);
-                vscode.window.showErrorMessage(`AutoAccept-Antigravity failed to start: ${msg}`);
+                this.log(`settings failed: ${msg}`);
+                vscode.window.showErrorMessage(`AutoAccept start failed: ${msg}`);
                 return;
             }
-        } else {
-            this.log('Skipping settings injection (autoConfigureSettings = false).');
         }
 
-        // Strategy 2: Start aggressive command polling
         this.startCommandPolling();
-
-        // Strategy 3: Start notification interception
-        if (interceptNotifications) {
-            this.startNotificationPolling();
-        } else {
-            this.log('Skipping notification interception (interceptNotifications = false).');
-        }
-
-        // Strategy 4: Setup event-driven reactions
         this.setupEventTracking();
-
-        // Strategy 5: Setup CDP Webview Fallback (clicks physical DOM buttons)
         this.startCDPPolling();
 
         this.updateStatusBar('on');
-        vscode.window.showInformationMessage(
-            '🚀 AutoAccept-Antigravity: Running! Auto-approving all agent actions.'
-        );
-        this.log('AutoAccept v2 started — settings injected, polling active, event tracking on.');
+        vscode.window.showInformationMessage('AutoAccept-Antigravity: Running');
+        this.log('started');
     }
 
     public async stop(notifyUser = true): Promise<void> {
-        if (this.isDisposed) { return; }
+        if (this.isDisposed) return;
 
         try {
-            this.log('Stopping AutoAccept-Antigravity...');
+            this.log('stopping');
             this.isRunning = false;
             this.stopAllPolling();
             this.disposeTracking();
             await this.restoreOriginalSettings();
             this.updateStatusBar('off');
-            if (notifyUser) {
-                vscode.window.showInformationMessage('AutoAccept-Antigravity: Stopped.');
-            }
+            if (notifyUser) vscode.window.showInformationMessage('AutoAccept-Antigravity: Stopped');
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            this.log(`Stop error: ${msg}`);
+            this.log(`stop error: ${msg}`);
             this.isRunning = false;
             this.updateStatusBar('off');
         }
     }
 
     public dispose(): void {
-        if (this.isDisposed) { return; }
-
+        if (this.isDisposed) return;
+        this.isDisposed = true;
         this.isRunning = false;
 
-        const restorePromise = this.restoreOriginalSettings();
+        try { this.stopAllPolling(); } catch { }
+        try { this.disposeTracking(); } catch { }
 
-        try { this.stopAllPolling(); } catch { /* best-effort */ }
-        try { this.disposeTracking(); } catch { /* best-effort */ }
-        this.isDisposed = true;
-        void restorePromise.catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`AutoAccept-Antigravity settings restore during dispose failed: ${msg}`);
-        });
-        try { this.statusBarItem?.dispose(); } catch { /* best-effort */ }
-        try { this.outputChannel?.dispose(); } catch { /* best-effort */ }
+        void this.restoreOriginalSettings()
+            .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                try { console.error(`[AutoAccept] settings restore failed: ${msg}`); } catch { }
+            })
+            .finally(() => {
+                try { this.statusBarItem?.dispose(); } catch { }
+                try { this.outputChannel?.dispose(); } catch { }
+            });
     }
 
     // ── Strategy 1: Settings Injection ────────────────────
@@ -426,33 +372,6 @@ export class AutoAcceptor implements vscode.Disposable {
         return config.get<boolean>('interceptNotifications', true);
     }
 
-    /**
-     * Focus-aware accept — shifts focus to agent panel, fires accept, restores.
-     * This is the key fix: antigravity.agent.acceptAgentStep requires !editorTextFocus.
-     */
-    private async focusAndAccept(): Promise<void> {
-        if (!this.isRunning || this.isDisposed) { return; }
-
-        try {
-            // Try each focus target to move focus away from editor
-            for (const focusCmd of this.focusCommands) {
-                if (this.isDisposed || !this.isRunning) { break; }
-                try {
-                    await vscode.commands.executeCommand(focusCmd);
-                    // Brief delay to let focus settle
-                    await new Promise(r => setTimeout(r, 50));
-
-                    // Now fire the accept command while focus is on the panel
-                    await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
-                    await vscode.commands.executeCommand('antigravity.agent.acceptAllAgentSteps');
-                } catch {
-                    // Focus command may not apply — try next
-                }
-            }
-        } catch {
-            // Silent — best effort
-        }
-    }
 
     /**
      * Fast poll — fires critical accept commands directly.
@@ -484,29 +403,13 @@ export class AutoAcceptor implements vscode.Disposable {
         }
 
         if (!(await this.checkPaywallLimit())) { return; }
-        const interceptNotifications = this.shouldInterceptNotifications();
 
         this.isPollInProgress = true;
 
         try {
-            // First: focus-aware accept (the key strategy)
-            await this.focusAndAccept();
-
-            // Then: fire critical commands directly (some may work without focus)
-            for (const cmd of this.criticalAcceptCommands) {
-                if (this.isDisposed || !this.isRunning) { break; }
-                if (!interceptNotifications && cmd.toLowerCase().includes('notification')) { continue; }
-                try {
-                    await vscode.commands.executeCommand(cmd);
-                } catch {
-                    // Not applicable
-                }
-            }
-
-            // Then secondary commands
+            // Fire secondary commands (critical ones are already handled by fastPoll)
             for (const cmd of this.secondaryAcceptCommands) {
                 if (this.isDisposed || !this.isRunning) { break; }
-                if (!interceptNotifications && cmd.toLowerCase().includes('notification')) { continue; }
                 try {
                     await vscode.commands.executeCommand(cmd);
                 } catch {
@@ -521,45 +424,8 @@ export class AutoAcceptor implements vscode.Disposable {
         }
     }
 
-    // ── Strategy 3: Notification Interception ─────────────
-
-    private startNotificationPolling(): void {
-        if (this.isDisposed) { return; }
-
-        if (this.notificationPollInterval) {
-            clearInterval(this.notificationPollInterval);
-            this.notificationPollInterval = null;
-        }
-
-        // Aggressively try to accept notification primary actions
-        // This catches "Run", "Allow", "Yes", "Accept" buttons on notifications
-        this.notificationPollInterval = setInterval(() => {
-            void (async () => {
-                if (!this.isRunning || this.isDisposed) { return; }
-                if (!this.shouldInterceptNotifications()) { return; }
-                if (!(await this.checkPaywallLimit())) { return; }
-
-                try {
-                    // Try accepting the primary action on any visible notification
-                    await vscode.commands.executeCommand('notification.acceptPrimaryAction');
-                } catch {
-                    // No notification to accept
-                }
-
-                try {
-                    // Also try the notifications (plural) variant
-                    await vscode.commands.executeCommand('notifications.acceptPrimaryAction');
-                } catch {
-                    // No notification
-                }
-            })().catch((err: unknown) => {
-                const msg = err instanceof Error ? err.message : String(err);
-                this.log(`Notification poll error: ${msg}`);
-            });
-        }, 400); // Very fast — catch notifications before user has to click
-
-        this.log('Notification interception started (400ms interval).');
-    }
+    // Notification acceptance is handled by fastPoll (via criticalAcceptCommands)
+    // — no separate notification polling timer needed.
 
     // ── Strategy 4: Event-Driven Reactions ─────────────────
 
@@ -683,11 +549,10 @@ export class AutoAcceptor implements vscode.Disposable {
             })
         );
 
-        // Track text document saves (can indicate an apply/accept cycle completing)
+        // Track text document saves (informational only — does not count as an auto-accept action)
         this.trackingDisposables.push(
             vscode.workspace.onDidSaveTextDocument((doc) => {
                 if (this.isRunning) {
-                    this.executedCount++;
                     this.lastActivity = `Saved ${doc.fileName.split(/[\\/]/).pop()}`;
                 }
             })
@@ -717,10 +582,7 @@ export class AutoAcceptor implements vscode.Disposable {
             clearInterval(this.fastPollInterval);
             this.fastPollInterval = null;
         }
-        if (this.notificationPollInterval) {
-            clearInterval(this.notificationPollInterval);
-            this.notificationPollInterval = null;
-        }
+
         if (this.cdpIntervalId) {
             clearInterval(this.cdpIntervalId);
             this.cdpIntervalId = null;
@@ -756,6 +618,14 @@ export class AutoAcceptor implements vscode.Disposable {
         if (!this.isRunning || this.isDisposed || this.isCdpBusy) return;
         if (!(await this.checkPaywallLimit())) return;
 
+        // Prune stale entries from lastExpandTimes to prevent unbounded growth
+        const now = Date.now();
+        for (const key of Object.keys(this.lastExpandTimes)) {
+            if (now - this.lastExpandTimes[key] > 60000) {
+                delete this.lastExpandTimes[key];
+            }
+        }
+
         this.isCdpBusy = true;
 
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
@@ -788,23 +658,32 @@ export class AutoAcceptor implements vscode.Disposable {
 
     private cdpGetBrowserWsUrl(port: number): Promise<string | null> {
         return new Promise((resolve, reject) => {
+            let done = false;
+            const end = (err: Error | null, val: string | null = null) => {
+                if (done) return;
+                done = true;
+                err ? reject(err) : resolve(val);
+            };
+
             const req = http.get({ hostname: '127.0.0.1', port, path: '/json/version', timeout: 800 }, (res) => {
                 if (res.statusCode !== 200) {
-                    res.resume(); // drain the response to free memory
-                    return reject(new Error(`HTTP ${res.statusCode}`));
+                    res.resume();
+                    return end(new Error(`HTTP ${res.statusCode}`));
                 }
                 let data = '';
                 res.on('data', chunk => data += chunk);
-                res.on('error', reject);
+                res.on('error', (e) => end(e));
                 res.on('end', () => {
                     try {
                         const info = JSON.parse(data);
-                        resolve(info.webSocketDebuggerUrl || null);
-                    } catch (e) { reject(e); }
+                        end(null, info.webSocketDebuggerUrl || null);
+                    } catch (e) {
+                        end(e instanceof Error ? e : new Error(String(e)));
+                    }
                 });
             });
-            req.on('error', reject);
-            req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+            req.on('error', (e) => end(e));
+            req.on('timeout', () => { req.destroy(); end(new Error('timeout')); });
         });
     }
 
@@ -815,7 +694,10 @@ export class AutoAcceptor implements vscode.Disposable {
 
             return await new Promise<boolean>((resolve) => {
                 const ws = new WebSocket(browserWsUrl);
-                const timeout = setTimeout(() => { ws.close(); resolve(false); }, 5000);
+                let done = false;
+                const end = (ok: boolean) => { if (!done) { done = true; resolve(ok); } };
+
+                const timeout = setTimeout(() => { ws.close(); end(false); }, 5000);
 
                 let msgId = 1;
                 const pending: Record<number, { res: (v: any) => void; rej: (err: any) => void }> = {};
@@ -852,7 +734,7 @@ export class AutoAcceptor implements vscode.Disposable {
                     }
                 });
 
-                ws.on('error', () => { clearTimeout(timeout); resolve(false); });
+                ws.on('error', () => { clearTimeout(timeout); end(false); });
 
                 ws.on('open', async () => {
                     try {
@@ -927,9 +809,9 @@ export class AutoAcceptor implements vscode.Disposable {
 
                         clearTimeout(timeout);
                         ws.close();
-                        resolve(true);
+                        end(true);
                     } catch (e) {
-                        clearTimeout(timeout); ws.close(); resolve(false);
+                        clearTimeout(timeout); ws.close(); end(false);
                     }
                 });
             });
@@ -1120,7 +1002,6 @@ export class AutoAcceptor implements vscode.Disposable {
     // ── Logging ────────────────────────────────────────────
 
     private log(message: string): void {
-        if (this.isDisposed) { return; }
         try {
             const timestamp = new Date().toISOString();
             this.outputChannel?.appendLine(`[${timestamp}] ${message}`);
