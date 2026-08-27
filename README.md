@@ -61,7 +61,7 @@ Open VS Code Settings and search for `autoAcceptAgent`:
 }
 ```
 
-See [docs/configuration.md](docs/configuration.md) for detailed options.
+See [docs/configuration.md](docs/configuration.md) for all options.
 
 ## How It Works
 
@@ -73,20 +73,6 @@ Four strategies work together to approve actions:
 4. **CDP Fallback** — Optionally clicks approval buttons directly in webviews
 
 [Read the full technical overview](docs/how-it-works.md)
-
-## Pricing
-
-**Free** ✓
-- Unlimited auto-accept actions
-- All core features
-- Community support
-
-**Pro** (Coming Soon)
-- Advanced features
-- Priority support
-- Early access
-
-[Learn about Pro features](docs/pricing.md)
 
 ## Examples
 

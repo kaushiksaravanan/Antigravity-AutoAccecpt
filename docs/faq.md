@@ -30,12 +30,8 @@ Example blocked patterns: `rm -rf /`, `format`, `mkfs`, `del *`, `DROP TABLE`
 **A:** No. We only know:
 - If you use the extension (install count)
 - VS Code version
-- If you have Pro
 
 We do NOT see your code, commands, or personal info.
-
-### Q: Is my data encrypted?
-**A:** Yes. RevenueCat (subscription provider) encrypts all data in transit and at rest.
 
 ---
 
@@ -216,27 +212,6 @@ Check GitHub releases for changelog.
 - Auto Accept version
 - Steps to reproduce
 - Expected vs actual behavior
-
----
-
-## Pro & Monetization
-
-### Q: Is Pro worth it?
-**A:** Only if you:
-- Use Auto Accept 50+ times/day
-- Need advanced CDP features
-- Want priority support
-
-Otherwise free tier is sufficient.
-
-### Q: Can I try Pro before buying?
-**A:** Yes. 30-day refund guarantee.
-
-### Q: Do I get pro features during trial?
-**A:** Coming soon. For now, 30-day money-back is our trial.
-
-### Q: Is there a team license?
-**A:** Yes. Contact enterprise@autoaccept.dev for bulk pricing.
 
 ---
 
