@@ -1,17 +1,40 @@
 # Changelog
 
-All notable changes to the "AutoAccept-Antigravity" extension will be documented in this file.
+All notable changes to Auto Accept Antigravity are documented here.
 
-## [0.7.7] - 2026-03-24
+## [0.7.7] - 2026-08-26
+
 ### Changed
-- Bumped the extension version to 0.7.7.
-- Made CDP fallback opt-in by default so the extension works cleanly without debugging ports.
-- Cleaned the packaged VSIX to exclude test and debug artifacts.
+- Refactored core code for readability and maintainability
+- Simplified error handling with improved promise resolution patterns
+- Streamlined command registration with reusable patterns
+- Reduced unnecessary comments and verbose code
 
 ### Fixed
-- Restored original settings reliably on stop/deactivate.
-- Hardened polling, notification, terminal, and CDP flows against async race conditions and unhandled errors.
-- Added missing contributed settings for `interceptNotifications`, `enableCDP`, and `customButtonTexts` behavior alignment.
+- Fixed race condition in WebSocket resolution (`multiplexCdpWebviews`)
+- Fixed potential double-resolution in HTTP timeout handling
+- Improved async cleanup during extension disposal
+
+### Added
+- Comprehensive documentation (configuration, how-it-works, FAQ)
+- Configuration examples (basic, aggressive, security-hardened, relaxed)
+- Contributing guidelines and code of conduct
+- Pricing documentation with monetization details
+
+## [0.7.6] - 2026-08-20
+
+### Added
+- Advanced diagnostics command
+- Custom button text support for localized UIs
+- Security hardening configuration examples
+
+### Changed
+- Improved polling efficiency
+- Better error logging and diagnostics
+
+### Fixed
+- Fixed settings restoration on extension shutdown
+- Improved resource cleanup on disposal
 
 ## [0.7.2] - 2026-02-23
 ### Changed

@@ -1,0 +1,13 @@
+{
+  "autoAcceptAgent.enableCommandPolling": true,
+  "autoAcceptAgent.pollIntervalMs": 1500,
+  "autoAcceptAgent.autoConfigureSettings": true,
+  "autoAcceptAgent.interceptNotifications": true,
+  "autoAcceptAgent.enableCDP": false,
+  "autoAcceptAgent.blockedCommands": [
+    "rm -rf /",
+    "format",
+    "mkfs"
+  ],
+  "autoAcceptAgent.customButtonTexts": []
+}

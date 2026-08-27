@@ -1,0 +1,25 @@
+{
+  "autoAcceptAgent.enableCommandPolling": true,
+  "autoAcceptAgent.pollIntervalMs": 1000,
+  "autoAcceptAgent.autoConfigureSettings": true,
+  "autoAcceptAgent.interceptNotifications": false,
+  "autoAcceptAgent.enableCDP": false,
+  "autoAcceptAgent.blockedCommands": [
+    "rm -rf",
+    "rm -f",
+    "format",
+    "mkfs",
+    "del",
+    "del *",
+    "rmdir",
+    "rd",
+    "erase",
+    "DROP TABLE",
+    "DELETE FROM",
+    "git push --force",
+    "git reset --hard",
+    "npm publish",
+    "git clean -fd"
+  ],
+  "autoAcceptAgent.customButtonTexts": []
+}

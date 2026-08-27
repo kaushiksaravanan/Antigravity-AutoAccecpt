@@ -1,30 +1,151 @@
-# AutoAccept-Antigravity
+# Auto Accept Antigravity
 
-Automatically accept AI agent actions (file edits, terminal commands) in VS Code.
-No babysitting required! This extension uses VS Code's native settings API to auto-approve agent actions — **no launch flags needed**.
+> Automatically approve AI agent actions in VS Code. Zero config. No launch flags.
+
+[![Version](https://img.shields.io/badge/version-0.7.7-blue)](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/releases)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.90%2B-blue)](https://code.visualstudio.com/)
 
 ## Features
-* **Zero Config**: Just install and toggle — no `--remote-debugging-port` or special launch flags.
-* **Background Auto-Accept**: Keeps conversations moving without manual clicks.
-* **Settings Management**: Automatically enables/disables VS Code's built-in auto-approval settings.
-* **Command Blocking**: Prevents dangerous commands (like `rm -rf /`) from auto-running.
-* **Clean Toggle**: Restores your original settings when stopped.
 
-## Installation / Quick Start
-1. Install this extension from the VS Code Marketplace.
-2. The extension starts automatically — check the bottom right status bar for: `Auto Accept: ON`.
-3. Click the status bar item to toggle on/off.
+🚀 **Instant Auto-Accept** — Approve agent steps, terminal commands, and file edits automatically
+
+⚡ **Zero Configuration** — Works out of the box. No launch flags, no setup required
+
+🛡️ **Safe by Default** — Blocked command list prevents dangerous operations (rm -rf, format, etc)
+
+🎛️ **Full Control** — Settings-based configuration for polling speed, button interception, custom commands
+
+🔌 **Chrome DevTools Protocol Fallback** — Optional CDP support for webview button clicks
+
+📊 **Diagnostics** — Built-in diagnostics to check VS Code command availability
+
+## Quick Start
+
+1. Install from VS Code Marketplace: [Auto Accept Antigravity](https://marketplace.visualstudio.com/items?itemName=kaushiksaravanan.auto-accept-antigravity)
+2. Click the status bar icon (bottom right) to toggle on
+3. Start using Antigravity—approvals happen automatically
+
+## Usage
+
+### Commands
+
+- `Auto Accept: Toggle` — Turn on/off (`Cmd+Shift+Y` / `Ctrl+Shift+Y`)
+- `Auto Accept: Start` — Activate auto-accept
+- `Auto Accept: Stop` — Deactivate auto-accept
+- `Auto Accept: Accept All Now` — Fire all pending approvals immediately
+- `Auto Accept: Run Diagnostics` — Check available commands
+
+### Configuration
+
+Open VS Code Settings and search for `autoAcceptAgent`:
+
+```json
+{
+  "autoAcceptAgent.enableCommandPolling": true,
+  "autoAcceptAgent.pollIntervalMs": 800,
+  "autoAcceptAgent.autoConfigureSettings": true,
+  "autoAcceptAgent.interceptNotifications": true,
+  "autoAcceptAgent.enableCDP": false,
+  "autoAcceptAgent.blockedCommands": [
+    "rm -rf /",
+    "format",
+    "mkfs",
+    "del",
+    "del *",
+    "rmdir",
+    "rd",
+    "erase"
+  ],
+  "autoAcceptAgent.customButtonTexts": []
+}
+```
+
+See [docs/configuration.md](docs/configuration.md) for detailed options.
 
 ## How It Works
-When active, the extension enables VS Code's built-in auto-approval settings:
-- `chat.tools.autoApprove` — auto-approves tool calls (file edits, searches)
-- `chat.agent.autoApprove` — auto-approves agent actions
-- `chat.tools.terminal.enableAutoApprove` — auto-approves terminal commands
 
-When stopped, all settings are **restored to their original values**.
+Four strategies work together to approve actions:
 
-## Configuration
-- `autoAcceptAgent.blockedCommands`: List of dangerous command patterns to block (default: `rm -rf /`, `format`, `mkfs`)
+1. **Settings Injection** — Auto-configures VS Code settings, then restores them when stopped
+2. **Command Polling** — Fires accept commands every 400-800ms
+3. **Event Tracking** — Reacts to terminal launches, editor changes, document saves
+4. **CDP Fallback** — Optionally clicks approval buttons directly in webviews
+
+[Read the full technical overview](docs/how-it-works.md)
+
+## Pricing
+
+**Free** ✓
+- Unlimited auto-accept actions
+- All core features
+- Community support
+
+**Pro** (Coming Soon)
+- Advanced features
+- Priority support
+- Early access
+
+[Learn about Pro features](docs/pricing.md)
+
+## Examples
+
+Check [examples/](examples/) for configuration templates:
+- Basic setup
+- Security-hardened mode
+- Terminal-focused config
+- Custom button labels
+
+## FAQ
+
+**Q: Is this safe?**
+A: Yes. Blocked commands prevent dangerous operations. Customize via settings.
+
+**Q: Does it slow down VS Code?**
+A: No. Polling runs at low priority (800ms default, adjustable).
+
+**Q: Works with terminal commands?**
+A: Yes. Approves terminal execution, file modifications, and agent steps.
+
+**Q: Custom button labels?**
+A: Yes. Add to `autoAcceptAgent.customButtonTexts` in settings.
+
+[See full FAQ](docs/faq.md)
+
+## Development
+
+### Build
+
+```bash
+npm run compile      # TypeScript → JavaScript
+npm run watch        # Watch mode
+npm run package      # Create .vsix
+npm run publish      # Publish to Marketplace
+```
+
+### Project Structure
+
+```
+src/
+├── autoAcceptor.ts      # Auto-accept engine
+├── extension.ts         # VS Code entry
+└── diagnostics.ts       # Diagnostics
+
+docs/                    # Documentation
+examples/                # Config examples
+assets/                  # Screenshots, icons
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
 
 ## License
-MIT
+
+MIT — [LICENSE](LICENSE)
+
+## Author
+
+[Kaushik Saravanan](https://github.com/kaushiksaravanan)
+
+---
+
+**Status:** Actively maintained. Issues and PRs welcome.

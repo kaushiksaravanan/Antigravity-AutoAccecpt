@@ -1,0 +1,18 @@
+{
+  "autoAcceptAgent.enableCommandPolling": true,
+  "autoAcceptAgent.pollIntervalMs": 800,
+  "autoAcceptAgent.autoConfigureSettings": true,
+  "autoAcceptAgent.interceptNotifications": true,
+  "autoAcceptAgent.enableCDP": false,
+  "autoAcceptAgent.blockedCommands": [
+    "rm -rf /",
+    "format",
+    "mkfs",
+    "del",
+    "del *",
+    "rmdir",
+    "rd",
+    "erase"
+  ],
+  "autoAcceptAgent.customButtonTexts": []
+}
