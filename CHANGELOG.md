@@ -2,6 +2,12 @@
 
 All notable changes to Auto Accept Antigravity are documented here.
 
+## [0.7.8] - 2026-09-02
+
+### Changed
+- Cleaned up documentation and configuration references
+- General maintenance and stability improvements for Open VSX release
+
 ## [0.7.7] - 2026-08-26
 
 ### Changed
