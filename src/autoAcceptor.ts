@@ -40,6 +40,8 @@ export class AutoAcceptor implements vscode.Disposable {
     private executedCount = 0;
     private settingsApplied = false;
     private lastActivity = '';
+    private lastUserInteractionTime = 0;
+    private readonly USER_INTERACTION_GRACE_MS = 1500;
     private readonly originalGlobalSettings = new Map<string, {
         section: string;
         key: string;
@@ -59,9 +61,6 @@ export class AutoAcceptor implements vscode.Disposable {
         'antigravity.terminalCommand.accept',
         'antigravity.terminalCommand.run',
 
-        // ── Antigravity hunk-level acceptance ──
-        'antigravity.prioritized.agentAcceptFocusedHunk',
-
         // ── Notification acceptance (catches "Allow", "Run", "Yes" buttons) ──
         'notification.acceptPrimaryAction',
         'notifications.acceptPrimaryAction',
@@ -70,12 +69,9 @@ export class AutoAcceptor implements vscode.Disposable {
     private readonly secondaryAcceptCommands: string[] = [
         // ── VS Code built-in chat / editing ──
         'workbench.action.chat.accept',
-        'workbench.action.chat.submit',
 
         // ── Terminal suggestions ──
         'workbench.action.terminal.chat.runCommand',
-        'workbench.action.terminal.chat.acceptCommand',
-        'workbench.action.terminal.chat.insertCommand',
     ];
 
     /**
@@ -367,11 +363,14 @@ export class AutoAcceptor implements vscode.Disposable {
         this.log(`Command polling started: fast=${Math.max(200, intervalMs / 2)}ms, full=${intervalMs}ms`);
     }
 
+    private isUserInteracting(): boolean {
+        return (Date.now() - this.lastUserInteractionTime) < this.USER_INTERACTION_GRACE_MS;
+    }
+
     private shouldInterceptNotifications(): boolean {
         const config = vscode.workspace.getConfiguration('autoAcceptAgent');
         return config.get<boolean>('interceptNotifications', true);
     }
-
 
     /**
      * Fast poll — fires critical accept commands directly.
@@ -379,11 +378,12 @@ export class AutoAcceptor implements vscode.Disposable {
      */
     private async fastPoll(): Promise<void> {
         if (!this.isRunning || this.isDisposed) { return; }
+        if (this.isUserInteracting()) { return; }
         if (!(await this.checkPaywallLimit())) { return; }
         const interceptNotifications = this.shouldInterceptNotifications();
 
         for (const cmd of this.criticalAcceptCommands) {
-            if (this.isDisposed || !this.isRunning) { break; }
+            if (this.isDisposed || !this.isRunning || this.isUserInteracting()) { break; }
             if (!interceptNotifications && cmd.toLowerCase().includes('notification')) { continue; }
             try {
                 await vscode.commands.executeCommand(cmd);
@@ -401,7 +401,7 @@ export class AutoAcceptor implements vscode.Disposable {
         if (this.isPollInProgress || !this.isRunning || this.isDisposed) {
             return;
         }
-
+        if (this.isUserInteracting()) { return; }
         if (!(await this.checkPaywallLimit())) { return; }
 
         this.isPollInProgress = true;
@@ -409,7 +409,7 @@ export class AutoAcceptor implements vscode.Disposable {
         try {
             // Fire secondary commands (critical ones are already handled by fastPoll)
             for (const cmd of this.secondaryAcceptCommands) {
-                if (this.isDisposed || !this.isRunning) { break; }
+                if (this.isDisposed || !this.isRunning || this.isUserInteracting()) { break; }
                 try {
                     await vscode.commands.executeCommand(cmd);
                 } catch {
@@ -473,15 +473,29 @@ export class AutoAcceptor implements vscode.Disposable {
             );
         }
 
-        // React to active editor changes — when focus moves (e.g., to a diff view),
-        // immediately accept any pending edits
+        // Protect user typing and cursor: track user keyboard/mouse cursor interaction
         this.trackingDisposables.push(
-            vscode.window.onDidChangeActiveTextEditor(async () => {
+            vscode.window.onDidChangeTextEditorSelection((e) => {
+                if (e.kind === vscode.TextEditorSelectionChangeKind.Keyboard || e.kind === vscode.TextEditorSelectionChangeKind.Mouse) {
+                    this.lastUserInteractionTime = Date.now();
+                }
+            })
+        );
+
+        // React to active editor changes — only accept if it's NOT a standard user file
+        this.trackingDisposables.push(
+            vscode.window.onDidChangeActiveTextEditor(async (editor) => {
                 if (this.isRunning && !this.isDisposed) {
-                    // Small delay to let the UI update, then accept
+                    // If user focused their own code file, record interaction and do NOT steal focus
+                    if (editor?.document.uri.scheme === 'file') {
+                        this.lastUserInteractionTime = Date.now();
+                        return;
+                    }
+                    if (this.isUserInteracting()) { return; }
+
                     setTimeout(() => {
                         void (async () => {
-                            if (!this.isRunning || this.isDisposed) { return; }
+                            if (!this.isRunning || this.isDisposed || this.isUserInteracting()) { return; }
                             try {
                                 await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
                             } catch {
@@ -491,7 +505,7 @@ export class AutoAcceptor implements vscode.Disposable {
                             const msg = err instanceof Error ? err.message : String(err);
                             this.log(`Active editor reaction error: ${msg}`);
                         });
-                    }, 200);
+                    }, 400);
                 }
             })
         );
@@ -500,9 +514,10 @@ export class AutoAcceptor implements vscode.Disposable {
         this.trackingDisposables.push(
             vscode.window.onDidChangeVisibleTextEditors(async () => {
                 if (this.isRunning && !this.isDisposed) {
+                    if (this.isUserInteracting()) { return; }
                     setTimeout(() => {
                         void (async () => {
-                            if (!this.isRunning || this.isDisposed) { return; }
+                            if (!this.isRunning || this.isDisposed || this.isUserInteracting()) { return; }
                             try {
                                 await vscode.commands.executeCommand('antigravity.agent.acceptAgentStep');
                             } catch {
@@ -512,7 +527,7 @@ export class AutoAcceptor implements vscode.Disposable {
                             const msg = err instanceof Error ? err.message : String(err);
                             this.log(`Visible editor reaction error: ${msg}`);
                         });
-                    }, 300);
+                    }, 500);
                 }
             })
         );
@@ -521,10 +536,11 @@ export class AutoAcceptor implements vscode.Disposable {
         this.trackingDisposables.push(
             vscode.window.onDidOpenTerminal(async () => {
                 if (this.isRunning && !this.isDisposed) {
+                    if (this.isUserInteracting()) { return; }
                     this.log('New terminal opened — attempting acceptance...');
                     setTimeout(() => {
                         void (async () => {
-                            if (!this.isRunning || this.isDisposed) { return; }
+                            if (!this.isRunning || this.isDisposed || this.isUserInteracting()) { return; }
                             const interceptNotifications = this.shouldInterceptNotifications();
                             const cmds = [
                                 'antigravity.terminalCommand.accept',
@@ -558,11 +574,11 @@ export class AutoAcceptor implements vscode.Disposable {
             })
         );
 
-        // Track text document edits
+        // Track text document edits — pause polling when user is typing
         this.trackingDisposables.push(
             vscode.workspace.onDidChangeTextDocument((e) => {
                 if (this.isRunning && e.contentChanges.length > 0) {
-                    // Do not increment executedCount here as it triggers on every keystroke
+                    this.lastUserInteractionTime = Date.now();
                     this.lastActivity = `Edited ${e.document.fileName.split(/[\\/]/).pop()}`;
                 }
             })

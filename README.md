@@ -2,7 +2,7 @@
 
 > Automatically approve AI agent actions in VS Code. Zero config. No launch flags.
 
-[![Version](https://img.shields.io/badge/version-0.7.8-blue)](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/releases)
+[![Version](https://img.shields.io/badge/version-0.7.9-blue)](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.90%2B-blue)](https://code.visualstudio.com/)
 

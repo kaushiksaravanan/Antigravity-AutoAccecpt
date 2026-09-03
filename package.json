@@ -2,7 +2,7 @@
   "name": "auto-accept-antigravity",
   "displayName": "Antigravity-AutoAccept",
   "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code — zero config, no launch flags needed",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",
@@ -128,8 +128,13 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package",
-    "publish": "vsce publish"
+    "package": "node scripts/release.js --bump=patch --variant=universal",
+    "package:same": "node scripts/release.js --no-bump --variant=universal",
+    "package:minor": "node scripts/release.js --bump=minor --variant=universal",
+    "package:variants": "node scripts/release.js --bump=patch --variant=all",
+    "publish:openvsx": "node scripts/release.js --bump=patch --publish=openvsx",
+    "publish:vscode": "node scripts/release.js --bump=patch --publish=vscode",
+    "publish:all": "node scripts/release.js --bump=patch --publish=all"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
