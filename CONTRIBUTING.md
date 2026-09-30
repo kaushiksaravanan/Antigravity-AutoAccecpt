@@ -107,37 +107,36 @@ catch { }
 
 ## Testing
 
-No formal tests yet (contributions welcome!).
+```bash
+npm test           # Blocklist matcher
+npm run compile    # Type-check and emit the extension
+```
 
-For now:
-1. Manual testing in VS Code
-2. Run diagnostics: `Auto Accept: Run Diagnostics`
-3. Check output channel for errors
-
----
+Manual checks live in `test/manual/` and `docs/agent-test-suite.md`. Run diagnostics from the command palette when a VS Code update changes command ids.
 
 ## Project Structure
 
 ```
 src/
-├── autoAcceptor.ts      # Core engine (4 strategies)
-├── extension.ts         # VS Code extension entry
-└── diagnostics.ts       # Diagnostic tools
+├── extension.ts         # VS Code entry
+├── autoAcceptor.ts      # Start, stop, polling, events
+├── catalog.ts           # Command ids and settings to write
+├── blocked.ts           # Blocklist matcher
+├── settingsGuard.ts     # Snapshot and restore
+├── cdpFallback.ts       # Optional webview clicks
+└── diagnostics.ts       # Diagnostic report
+
+test/
+├── blocked.test.ts
+└── manual/
 
 docs/
-├── configuration.md     # Settings reference
-├── how-it-works.md      # Technical overview
-├── faq.md              # FAQs
-└── pricing.md          # Monetization details
+├── configuration.md
+├── how-it-works.md
+├── faq.md
+└── agent-test-suite.md
 
-examples/
-├── basic.json          # Default config
-├── aggressive.json     # Fast polling + CDP
-├── security-hardened.json  # Extra safety
-└── relaxed.json        # Slow polling
-
-package.json            # Extension manifest
-tsconfig.json          # TypeScript config
+examples/                # Config presets
 ```
 
 ---
@@ -173,8 +172,8 @@ tsconfig.json          # TypeScript config
 
 ## FAQ for Contributors
 
-### Q: I want to add a 5th strategy. Is that good?
-**A:** Discuss in an issue first. The 4 current strategies are designed to cover most cases.
+### Q: I want to add another strategy. Is that good?
+**A:** Discuss it in an issue first. The current strategies already overlap, and a new one needs a place in the blocklist.
 
 ### Q: Can I refactor the polling logic?
 **A:** Yes, as long as behavior doesn't change. Keep it simple.
@@ -182,11 +181,8 @@ tsconfig.json          # TypeScript config
 ### Q: I found a security issue. What do I do?
 **A:** Email security@autoaccept.dev with details. Don't open a public issue.
 
-### Q: I want to change the pricing model.
-**A:** Discuss in an issue first. Pricing affects community trust.
-
-### Q: Can I add my own monetization (ads, analytics)?
-**A:** No. We keep Auto Accept clean and ad-free.
+### Q: Can I add analytics or a paywall?
+**A:** No. The unused paywall was removed. Do not add one that trusts the webview for entitlements.
 
 ---
 

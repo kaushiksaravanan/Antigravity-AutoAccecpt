@@ -4,15 +4,21 @@
   "autoAcceptAgent.autoConfigureSettings": true,
   "autoAcceptAgent.interceptNotifications": true,
   "autoAcceptAgent.enableCDP": false,
+  "autoAcceptAgent.cdpPort": 9222,
   "autoAcceptAgent.blockedCommands": [
     "rm -rf /",
+    "rm -rf",
     "format",
     "mkfs",
     "del",
     "del *",
     "rmdir",
     "rd",
-    "erase"
+    "erase",
+    "Remove-Item",
+    "git push --force",
+    "git reset --hard",
+    "git clean -fd"
   ],
   "autoAcceptAgent.customButtonTexts": []
 }

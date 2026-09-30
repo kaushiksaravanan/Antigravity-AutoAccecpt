@@ -2,33 +2,14 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { settingsToInspect } from './catalog';
 
 /**
  * Diagnostic tool that discovers what commands and settings are available
  * in the current VS Code instance for auto-accepting agent actions.
- * 
+ *
  * Run via Command Palette: "Auto Accept: Run Diagnostics"
  */
-
-// All known setting keys that might control auto-approval
-const CANDIDATE_SETTINGS: Array<[string, string, unknown]> = [
-    // VS Code built-in chat settings
-    ['chat.tools', 'autoApprove', true],
-    ['chat.tools.global', 'autoApprove', true],
-    ['chat.tools.terminal', 'enableAutoApprove', true],
-    ['chat.tools.terminal', 'autoApprove', true],
-    ['chat.tools.edits', 'autoApprove', true],
-    ['chat.agent', 'autoApprove', true],
-    ['chat.agent', 'maxRequests', 100],
-    // GitHub Copilot settings
-    ['github.copilot.chat.agent', 'autoApprove', true],
-    ['github.copilot.chat', 'autoApprove', true],
-    ['copilot.agent', 'autoApproveCommands', true],
-    // Gemini / Google settings
-    ['geminai', 'autoApprove', true],
-    ['google.gemini', 'autoApprove', true],
-    ['gemini.agent', 'autoApprove', true],
-];
 
 // Command patterns to search for
 const COMMAND_SEARCH_PATTERNS: RegExp[] = [
@@ -133,7 +114,7 @@ export async function runDiagnostics(outputChannel: vscode.OutputChannel): Promi
     log('## 2. Settings Inspection');
     log('');
 
-    for (const [section, key] of CANDIDATE_SETTINGS) {
+    for (const [section, key] of settingsToInspect) {
         const fullKey = `${section}.${key}`;
         try {
             const config = vscode.workspace.getConfiguration(section);

@@ -37,21 +37,24 @@ When enabled, these settings are modified and restored on toggle:
 - `chat.tools.autoApprove`
 - `chat.agent.autoApprove`
 - `chat.tools.terminal.enableAutoApprove`
-- `security.workspace.trust.enabled`
+- `terminal.integrated.confirmOnKill`
+- `terminal.integrated.confirmOnPaste`
+
+Workspace trust is not modified. Original values are stored before the first write and restored if the editor crashes.
 
 ### `interceptNotifications`
 - **Type:** `boolean`
 - **Default:** `true`
-- **Description:** Auto-click approval buttons in notifications.
-
-When enabled, Auto Accept will click "Allow", "Run", "Yes", etc. buttons automatically.
+- **Description:** When CDP is enabled, also click Allow buttons in the agent UI. This does not accept unrelated VS Code notifications.
 
 ### `enableCDP`
 - **Type:** `boolean`
 - **Default:** `false`
 - **Description:** Enable Chrome DevTools Protocol fallback.
 
-This scans webviews for approval buttons and clicks them directly. Requires Chrome with `--remote-debugging-port=9222`.
+This connects to `autoAcceptAgent.cdpPort` (default 9222) and clicks approval buttons in VS Code webviews. Launch the editor with `--remote-debugging-port` set to that port.
+
+When CDP is on, terminal Run buttons are clicked only after the blocklist check. The fallback does not attach to other local browser pages.
 
 **When to enable:**
 - Command polling isn't reaching approval buttons
@@ -66,23 +69,25 @@ This scans webviews for approval buttons and clicks them directly. Requires Chro
   ```json
   [
     "rm -rf /",
+    "rm -rf",
     "format",
     "mkfs",
     "del",
     "del *",
     "rmdir",
     "rd",
-    "erase"
+    "erase",
+    "Remove-Item",
+    "git push --force",
+    "git reset --hard",
+    "git clean -fd"
   ]
   ```
-- **Description:** List of command patterns to prevent auto-accept.
+- **Description:** Command lines that must not be auto-approved.
 
-When Auto Accept detects a blocked command pattern near a "Run" or "Accept" button, it skips approval.
+A single word matches the command name only (`del` matches `del file`, not `delta`). Several words match that sequence (`rm -rf`, `git push --force`). `git format-patch` is not blocked by `format`.
 
-**How it works:**
-1. When you hover "Run" button, Auto Accept checks nearby text
-2. If any blocked command is found (case-insensitive), approval is blocked
-3. You must approve manually
+If a blocked command starts, that terminal is closed and terminal auto-accept pauses for 60 seconds. Shell integration has to be on for that event. With CDP enabled, the click is refused when the nearby text matches.
 
 **Custom blocks:**
 Add your own dangerous patterns:
@@ -121,7 +126,7 @@ Auto Accept will click buttons with these labels in addition to the default ones
 
 ## Settings.json Example
 
-Full minimal config:
+Full minimal config. A short `blockedCommands` list replaces the default, it does not add to it. See [examples/basic.json](../examples/basic.json) for the default list.
 ```json
 {
   "autoAcceptAgent.enableCommandPolling": true,
@@ -141,11 +146,10 @@ Full minimal config:
 ## Presets
 
 See [examples/](../examples/) for common configuration presets:
-- `basic.json` — Default, safe config
-- `aggressive.json` — Fast polling (400ms)
-- `relaxed.json` — Slow polling (1500ms)
+- `basic.json` — Default config
+- `aggressive.json` — Fast polling and CDP
+- `relaxed.json` — Slow polling
 - `security-hardened.json` — Extra blocked commands
-- `terminal-focused.json` — Terminal-specific config
 
 ## Troubleshooting
 
@@ -159,7 +163,7 @@ Increase `pollIntervalMs` to 1000-1500ms, or disable `enableCDP`.
 Check if they're in `blockedCommands`, or add their text to `customButtonTexts`.
 
 ### CDP port conflicts
-Change port in settings (default 9222) or disable CDP entirely.
+Set `autoAcceptAgent.cdpPort` to a free port and launch the editor with the same `--remote-debugging-port`. Or leave CDP disabled.
 
 ## Restoring Defaults
 

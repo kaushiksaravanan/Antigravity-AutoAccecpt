@@ -1,273 +1,86 @@
 # How Auto Accept Works
 
-Auto Accept uses four independent strategies that work together to approve agent actions:
+Auto Accept uses four strategies. They do not all see the same information, so the blocked-command check is not the same on every path.
 
-## Strategy 1: Settings Injection
+## Strategy 1: Settings injection
 
-When you toggle Auto Accept **ON**, it modifies VS Code's built-in auto-approval settings:
+Turning Auto Accept on writes user-level chat and terminal settings, then restores the previous values when it stops. The previous values are saved in extension storage before the first write. If the editor closes mid-write, the next launch restores them.
+
+Settings this extension writes:
 
 ```
 chat.tools.autoApprove = true
 chat.agent.autoApprove = true
 chat.tools.terminal.enableAutoApprove = true
-security.workspace.trust.enabled = false
+chat.tools.terminal.autoApprove = true
+chat.agent.maxRequests = 999
 terminal.integrated.confirmOnKill = never
 terminal.integrated.confirmOnPaste = false
 ```
 
-**When you toggle OFF**, all settings are restored to their original values.
+It does not change `security.workspace.trust`.
 
-**Why:** This tells VS Code and Antigravity to skip showing approval dialogs in the first place.
+Turn this off with `autoAcceptAgent.autoConfigureSettings`.
 
-**Caveat:** Some approval dialogs still appear if they're triggered by other mechanisms (webviews, custom agents).
+## Strategy 2: Command polling
 
----
+Two timers fire known accept commands:
 
-## Strategy 2: Aggressive Command Polling
+- Fast poll, every half of `pollIntervalMs` (at least 200ms): agent and terminal accept commands.
+- Full poll, every `pollIntervalMs` (default 800ms): chat accept and the terminal chat run command.
 
-Auto Accept fires known accept/approve commands repeatedly:
+`notification.acceptPrimaryAction` is not used. That command accepts whatever notification is open.
 
-**Fast Poll** (every 400-800ms):
-- `antigravity.agent.acceptAgentStep`
-- `antigravity.command.accept`
-- `antigravity.terminalCommand.accept`
-- `antigravity.terminalCommand.run`
-- `notification.acceptPrimaryAction`
+While CDP is connected, polling does not fire terminal run commands. CDP is the path that can read the command text before the click. If CDP is enabled but the port is closed, polling keeps approving terminal commands and the shell listener still stops blocked ones.
 
-**Full Poll** (every 800-1500ms):
-- All critical commands above, plus:
-- `workbench.action.chat.accept`
-- `workbench.action.chat.submit`
-- `workbench.action.terminal.chat.runCommand`
+`autoAcceptAgent.enableCommandPolling` turns the timers off. Settings, events, and CDP keep their own switches.
 
-**How it works:**
-1. When an approval dialog appears, one of these commands becomes available
-2. Auto Accept fires the command
-3. The dialog closes (approval happens)
-4. On next poll cycle, the command is unavailable (no-op)
+## Strategy 3: Event reactions
 
-**Timing:** If polling interval is 800ms and an approval appears, you wait max 800ms for approval.
+- A terminal shell command that matches the blocklist is interrupted, that terminal is closed, and terminal auto-accept pauses for 60 seconds. This requires [shell integration](https://code.visualstudio.com/docs/terminal/shell-integration).
+- Focusing a non-file editor, or a change in visible editors, fires agent accept commands.
+- Keyboard and mouse selection changes pause polling for 1.5 seconds so the extension does not fight the user.
+- Agent edits to a document do not count as user typing.
 
----
+## Strategy 4: CDP fallback (off by default)
 
-## Strategy 3: Event-Driven Reactions
+Set `autoAcceptAgent.enableCDP` and launch the editor with `--remote-debugging-port` equal to `autoAcceptAgent.cdpPort` (default 9222).
 
-Auto Accept listens to VS Code events and reacts immediately:
+The fallback connects to that one localhost port, attaches only to `vscode-webview` targets, and clicks Run / Accept after the same blocklist check used for terminal commands. It does not scan a port range and it does not attach to other browser pages.
 
-### Terminal Launch
-When a new terminal opens:
-```
-onDidOpenTerminal → immediately fire terminal accept commands
-```
+`autoAcceptAgent.interceptNotifications` controls whether CDP may also click Allow buttons in the agent UI. It does not accept unrelated VS Code notifications.
 
-### Editor Focus Change
-When you click a different file (e.g., viewing a diff):
-```
-onDidChangeActiveTextEditor → immediately fire agent accept commands
-```
+## Blocked commands
 
-### Visible Editors Change
-When editor split happens (diffs, side-by-side):
-```
-onDidChangeVisibleTextEditors → immediately fire agent accept commands
-```
+A single word matches the command name only:
 
-### Document Activity
-Tracked but not used for approval:
-- Document saves (logged for diagnostics)
-- Text edits (logged for diagnostics)
+- `del temp.txt` is blocked
+- `git format-patch` is not blocked by `format`
+- `delta` is not blocked by `del`
 
-**Advantage:** Reacts in real-time instead of waiting for next polling cycle.
+Several words match that token sequence:
 
----
+- `rm -rf /tmp` matches `rm -rf`
+- `git push --force-with-lease` does not match `git push --force`
 
-## Strategy 4: Chrome DevTools Protocol (Optional)
+Wrappers such as `sudo`, `cmd /c`, and `powershell -Command` are unwrapped before the check.
 
-If command polling can't find approval buttons (e.g., in custom webviews), Auto Accept can connect directly to Chrome via CDP:
-
-```
-1. Scan CDP ports (9222, 9229, etc.)
-2. Attach to all webview targets
-3. Inject JavaScript to search for approval buttons
-4. Click buttons matching: "Run", "Accept", "Allow", "Yes"
-5. Check against blocked command list
-6. Click if safe
-```
-
-**Example JavaScript injected:**
-```javascript
-// Find button with text "Run"
-const button = Array.from(document.querySelectorAll('button'))
-  .find(btn => btn.textContent.includes('Run'));
-
-// Check for blocked commands nearby
-if (!isBlocked(button)) {
-  button.click();
-}
-```
-
-**When to use:**
-- ✓ Command polling isn't reaching approval buttons
-- ✓ Using custom webview-based agents
-- ✓ Want maximum approval coverage
-
-**When NOT to use:**
-- ✗ Default agents work fine without it
-- ✗ CDP adds network overhead
-- ✗ Browser must be launched with `--remote-debugging-port=9222`
-
-**Enable:** Set `autoAcceptAgent.enableCDP = true` in settings.
-
----
-
-## Safety: Blocked Commands
-
-Auto Accept prevents dangerous operations:
-
-```json
-{
-  "blockedCommands": [
-    "rm -rf /",
-    "format",
-    "mkfs",
-    "del",
-    "del *",
-    "rmdir",
-    "rd",
-    "erase"
-  ]
-}
-```
-
-**How it works:**
-1. When an approval button appears, check nearby text in the UI
-2. If any blocked command is found (case-insensitive):
-   ```
-   containerText.includes("rm -rf") → BLOCKED
-   ```
-3. Skip approval, you must click manually
-
-**Word boundary check:**
-- `rm` in `"from"` = NOT blocked (different word)
-- `rm -rf /` = BLOCKED (exact match)
-- `format string` = BLOCKED (word boundary works)
-
----
+If a blocked command has already started, the extension sends Ctrl+C and closes that terminal. Shell integration has to be enabled for this event to fire. CDP can refuse the click earlier, when it can see the text.
 
 ## Lifecycle
 
-### Activation
-```
-VS Code starts
-  → Extension activates
-  → Status bar shows "OFF"
-  → Nothing happens yet
-```
+Startup leaves Auto Accept off unless you previously turned it on. That choice is remembered.
 
-### Toggle ON
-```
-User clicks status bar or runs command
-  → isRunning = true
-  → Apply auto-approve settings
-  → Start command polling (fast + full)
-  → Start event tracking
-  → Start CDP polling (if enabled)
-  → Status bar shows "ON" (green)
-```
+Toggle on: save setting originals, start polling, subscribe to events, start CDP if enabled.
 
-### Approvals Happen
-```
-Agent tries to do something
-  → VS Code shows approval dialog/button
-  → One of 4 strategies detects it
-  → Command fires or button clicks
-  → Approval happens
-  → Agent continues
-```
+Toggle off: stop timers, remove listeners, restore settings.
 
-### Toggle OFF
-```
-User clicks status bar or runs command
-  → isRunning = false
-  → Stop all polling intervals
-  → Remove event listeners
-  → Restore original settings
-  → Status bar shows "OFF" (red)
-```
+Shutdown restores settings and keeps the on/off choice for the next launch.
 
-### Disposal (Extension unload)
-```
-VS Code shutdown or extension disabled
-  → dispose() called
-  → Stop polling immediately
-  → Remove event listeners
-  → Async: restore original settings
-  → Dispose status bar
-  → Dispose output channel
-```
+## Limits
 
----
+- Without shell integration, a blocked command that polling already approved can run. Enable shell integration, or enable CDP so the button text is checked first.
+- An encoded PowerShell command (`-EncodedCommand`) is not decoded.
+- File-edit accept commands are not passed through the shell blocklist. The blocklist is for commands that run.
 
-## Performance
-
-### CPU Impact
-- **Idle (no approvals):** ~0.1% CPU (just polling loop)
-- **Active (approvals):** ~0.3-0.5% CPU (polling + command execution)
-- **With CDP enabled:** +0.2% (webview scanning)
-
-### Memory Impact
-- **Baseline:** ~15 MB (extension process)
-- **Active:** ~20-25 MB (tracking state, pending requests)
-- **With CDP:** +10-15 MB (WebSocket connections)
-
-### Timing
-- **Fast poll latency:** 200-400ms (half of polling interval)
-- **Event reaction latency:** 0-50ms (immediate)
-- **CDP scan cycle:** 1500ms per port scan
-
----
-
-## Debugging
-
-### Check what's running
-Open VS Code's output channel:
-- View → Output
-- Select "Auto Accept Agent" from dropdown
-- See real-time logs
-
-### Enable diagnostics
-Run command: `Auto Accept: Run Diagnostics`
-Shows:
-- Available accept commands
-- Current settings
-- Port scan results (if CDP enabled)
-
-### Adjust logging
-- Current: Essential info only
-- Future: Verbose mode option coming
-
----
-
-## Limitations
-
-1. **Webview-only approvals** — CDP scan may miss some custom agent UIs
-2. **Network delays** — If agent response is slow, polling might trigger before dialog appears
-3. **Concurrent approvals** — If multiple approvals happen simultaneously, polling handles them sequentially
-4. **Settings restore** — Some settings may not restore perfectly if manually changed during active session
-
----
-
-## How It Differs From Similar Tools
-
-| Feature | Auto Accept | VSCode Native | Manual Approval |
-|---------|-------------|---------------|-----------------|
-| Zero config | ✓ | ✗ | N/A |
-| Command polling | ✓ | ✗ | N/A |
-| Event tracking | ✓ | ✗ | N/A |
-| CDP fallback | ✓ | ✗ | N/A |
-| Blocked commands | ✓ | Limited | ✓ |
-| Settings restore | ✓ | ✗ | N/A |
-
----
-
-For questions or technical details, see [FAQ](faq.md) or file an issue on GitHub.
+For settings, see [configuration.md](configuration.md).

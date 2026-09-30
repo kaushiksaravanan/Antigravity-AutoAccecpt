@@ -2,7 +2,7 @@
   "name": "auto-accept-antigravity",
   "displayName": "Antigravity-AutoAccept",
   "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code — zero config, no launch flags needed",
-  "version": "0.7.9",
+  "version": "0.7.10",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",
@@ -53,10 +53,6 @@
       {
         "command": "autoAcceptAgent.diagnostics",
         "title": "Auto Accept: Run Diagnostics"
-      },
-      {
-        "command": "autoAcceptAgent.showPaywall",
-        "title": "Auto Accept: Show RevenueCat Paywall"
       }
     ],
     "keybindings": [
@@ -72,7 +68,7 @@
         "autoAcceptAgent.enableCommandPolling": {
           "type": "boolean",
           "default": true,
-          "description": "Enable automatic polling of accept/approve commands."
+          "description": "Poll accept commands on a timer. Turning this off leaves settings changes, event reactions, and CDP (if enabled) running."
         },
         "autoAcceptAgent.pollIntervalMs": {
           "type": "number",
@@ -89,12 +85,19 @@
         "autoAcceptAgent.interceptNotifications": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically accept primary actions on approval notifications (Run, Allow, Yes)."
+          "description": "When CDP is enabled, also click Allow buttons in the agent UI. Auto Accept does not press the primary action on unrelated VS Code notifications."
         },
         "autoAcceptAgent.enableCDP": {
           "type": "boolean",
           "default": false,
-          "description": "Enable optional CDP fallback to click approval buttons directly in webviews when command polling cannot reach them. This is off by default for zero-config usage."
+          "description": "Enable optional CDP fallback to click approval buttons in VS Code webviews. When this is on, terminal Run buttons are clicked only after the blocked-command check. Requires the editor to be launched with --remote-debugging-port set to autoAcceptAgent.cdpPort (default 9222)."
+        },
+        "autoAcceptAgent.cdpPort": {
+          "type": "number",
+          "default": 9222,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Localhost port for the optional CDP fallback. Only this port is contacted."
         },
         "autoAcceptAgent.customButtonTexts": {
           "type": "array",
@@ -111,15 +114,20 @@
           },
           "default": [
             "rm -rf /",
+            "rm -rf",
             "format",
             "mkfs",
             "del",
             "del *",
             "rmdir",
             "rd",
-            "erase"
+            "erase",
+            "Remove-Item",
+            "git push --force",
+            "git reset --hard",
+            "git clean -fd"
           ],
-          "description": "A list of strings or command snippets that, if detected near the 'Run' button, will prevent the agent from automatically accepting."
+          "description": "Commands that must not be auto-approved. A single word matches the command name only (del matches del file, not delta). Several words match that sequence (rm -rf, git push --force). If a blocked command starts, that terminal is closed and terminal auto-accept pauses for 60 seconds."
         }
       }
     }
@@ -129,6 +137,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "node scripts/release.js --bump=patch --variant=universal",
+    "test": "tsc -p tsconfig.test.json && node --test out-test/test/blocked.test.js",
     "package:same": "node scripts/release.js --no-bump --variant=universal",
     "package:minor": "node scripts/release.js --bump=minor --variant=universal",
     "package:variants": "node scripts/release.js --bump=patch --variant=all",
@@ -144,7 +153,6 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
-    "@revenuecat/purchases-js": "^1.26.2",
     "ws": "^8.19.0"
   }
 }

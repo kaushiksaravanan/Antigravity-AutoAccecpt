@@ -33,20 +33,18 @@ Auto Accept uses a multi-strategy approach for robust approval automation:
 
 ## Component Breakdown
 
-### AutoAcceptor Class
+### AutoAcceptor (`src/autoAcceptor.ts`)
 
-Main engine (`src/autoAcceptor.ts`):
-- **Public API:** `start()`, `stop()`, `toggle()`, `dispose()`
-- **Strategies:** 4 independent approval mechanisms
-- **State Management:** `isRunning`, `isDisposed`, `isPollInProgress`
-- **Logging:** Real-time output to VS Code Output Channel
+Orchestrator:
+- **Public API:** `start()`, `stop()`, `toggle()`, `recover()`, `dispose()`
+- **Helpers:** `src/catalog.ts`, `src/blocked.ts`, `src/settingsGuard.ts`, `src/cdpFallback.ts`
+- **State:** `isRunning`, `isDisposed`, poll overlap guards, terminal pause deadline
 
 ### Extension Entry (`src/extension.ts`)
 
-- **Activation:** Runs when VS Code starts
-- **Command Registration:** Creates VS Code commands
-- **Status Bar:** Toggle UI element
-- **Disposal:** Cleanup on extension unload
+- **Activation:** Status bar starts off unless the user previously turned it on
+- **Command Registration:** Toggle, start, stop, accept now, diagnostics
+- **Disposal:** Restores settings on unload and keeps the on/off choice
 
 ## Strategy Details
 
@@ -57,9 +55,9 @@ Main engine (`src/autoAcceptor.ts`):
 applyAutoApproveSettings() {
   - Set chat.tools.autoApprove = true
   - Set chat.agent.autoApprove = true
-  - Set terminal.enableAutoApprove = true
-  - Disable security.workspace.trust
-  - Remember original values
+  - Set terminal auto-approve settings
+  - Remember original values in extension storage before writing
+  - Does not disable workspace trust
 }
 
 // On stop
@@ -73,10 +71,10 @@ restoreOriginalSettings() {
 
 ```typescript
 startCommandPolling() {
-  - Fast poll every 400ms → Fire critical commands
-  - Full poll every 800ms → Fire all commands
-  - Continue until stop() called
-  - Error handling: Log and continue
+  - Fast poll → agent and terminal accept commands
+  - Full poll → chat accept and terminal chat run
+  - Does not call notification.acceptPrimaryAction
+  - Skips terminal run commands while CDP is enabled
 }
 
 fastPoll() {
@@ -90,11 +88,10 @@ fastPoll() {
 
 ```typescript
 setupEventTracking() {
-  - onDidStartTerminalShellExecution → Check blocked commands
-  - onDidChangeActiveTextEditor → Fire accept commands
-  - onDidChangeVisibleTextEditors → Fire accept commands
-  - onDidSaveTextDocument → Log activity
-  - onDidChangeTextDocument → Log activity
+  - onDidStartTerminalShellExecution → close terminal if the command is blocked
+  - onDidChangeActiveTextEditor → fire agent accept commands
+  - onDidChangeVisibleTextEditors → fire agent accept commands
+  - Keyboard/mouse selection → pause polling briefly
 }
 ```
 
@@ -102,10 +99,9 @@ setupEventTracking() {
 
 ```typescript
 startCDPPolling() {
-  - Connect to Chrome DevTools Protocol (port 9222)
-  - Scan all webviews and pages
-  - Inject JavaScript to find approval buttons
-  - Click matching buttons (with blocked command check)
+  - Connect to 127.0.0.1 on autoAcceptAgent.cdpPort (default 9222)
+  - Attach only to vscode-webview targets
+  - Click approval buttons after the shared blocklist check
   - Every 1500ms cycle
 }
 
@@ -237,11 +233,12 @@ try {
 ## Testing Points
 
 Key areas to test:
-- [x] Settings injection/restoration
-- [x] Command polling execution
-- [x] Event listener setup/cleanup
-- [x] Blocked command detection
-- [x] CDP WebSocket communication
+- [x] Blocklist matcher (`npm test`)
+- [ ] Settings injection/restoration inside VS Code
+- [ ] Command polling execution
+- [ ] Event listener setup/cleanup
+- [ ] Blocked command terminal close
+- [ ] CDP webview filtering
 - [ ] Concurrent approval scenarios
 - [ ] Long-duration stability
 - [ ] Memory leak detection

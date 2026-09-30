@@ -1,11 +1,7 @@
 """
-AutoAccept-Antigravity Extension Test Script
-=============================================
-Run this script to verify the extension is working.
-If AutoAccept is ON, Antigravity should auto-click "Run"
-when it proposes executing this script.
+Manual smoke script for Auto Accept.
 
-The script prints a series of checks to confirm it ran successfully.
+Ask the agent to run this file. If Auto Accept is on, it should approve the run.
 """
 
 import sys
@@ -23,9 +19,6 @@ def main():
     print(f"  Timestamp      : {datetime.datetime.now().isoformat()}")
     print()
     print("  [OK] Script executed successfully!")
-    print("  [OK] If you saw Antigravity auto-click 'Run',")
-    print("       the extension is working correctly.")
-    print()
     print("=" * 50)
 
 

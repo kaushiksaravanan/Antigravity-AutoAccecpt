@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { AutoAcceptor } from './autoAcceptor';
+import { ENABLED_STATE_KEY, acceptNowCommands } from './catalog';
 import { runDiagnostics } from './diagnostics';
 
 let acceptor: AutoAcceptor | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
     try {
         const output = vscode.window.createOutputChannel('Auto Accept Agent');
         output.appendLine('activated');
@@ -16,9 +17,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
         const cmd = (id: string, fn: () => Promise<void>) =>
             vscode.commands.registerCommand(id, async () => {
-                try { await fn(); } catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e);
-                    vscode.window.showErrorMessage(`AutoAccept: ${msg}`);
+                try {
+                    await fn();
+                } catch (err: unknown) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    void vscode.window.showErrorMessage(`AutoAccept: ${message}`);
                 }
             });
 
@@ -27,37 +30,34 @@ export function activate(context: vscode.ExtensionContext): void {
             cmd('autoAcceptAgent.start', () => acceptor!.start()),
             cmd('autoAcceptAgent.stop', () => acceptor!.stop()),
             cmd('autoAcceptAgent.diagnostics', () => runDiagnostics(output)),
-            cmd('autoAcceptAgent.showPaywall', async () => {
-                const { showPaywall } = await import('./paywallWebview.js');
-                showPaywall(context);
-            }),
-            cmd('autoAcceptAgent.acceptNow', async () => {
-                const cmds = [
-                    'antigravity.agent.acceptAgentStep',
-                    'antigravity.command.accept',
-                    'antigravity.terminalCommand.accept',
-                    'antigravity.terminalCommand.run',
-                    'notification.acceptPrimaryAction',
-                    'workbench.action.chat.accept',
-                    'workbench.action.terminal.chat.runCommand',
-                ];
-                for (const c of cmds) {
-                    try { await vscode.commands.executeCommand(c); } catch { }
-                }
-            }),
-            acceptor
+            cmd('autoAcceptAgent.acceptNow', () => acceptNow()),
+            acceptor,
         );
 
-        acceptor.start().catch(() => { });
-
+        await acceptor.recover();
+        if (context.globalState.get<boolean>(ENABLED_STATE_KEY, false)) {
+            await acceptor.start({ quiet: true });
+        }
     } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`AutoAccept activation failed: ${msg}`);
+        const message = err instanceof Error ? err.message : String(err);
+        void vscode.window.showErrorMessage(`AutoAccept activation failed: ${message}`);
     }
 }
 
 export async function deactivate(): Promise<void> {
-    // Cleanup is handled by context.subscriptions disposing AutoAcceptor.
-    // We just clear the reference here to avoid stale usage.
+    if (!acceptor) {
+        return;
+    }
+    await acceptor.stop({ notify: false, persistOff: false });
     acceptor = undefined;
+}
+
+async function acceptNow(): Promise<void> {
+    for (const command of acceptNowCommands) {
+        try {
+            await vscode.commands.executeCommand(command);
+        } catch {
+            // Nothing is waiting for this command.
+        }
+    }
 }

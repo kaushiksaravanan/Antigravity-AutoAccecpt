@@ -9,16 +9,14 @@
 **A:** It loads at startup but doesn't run until you toggle ON. The status bar shows "OFF" by default.
 
 ### Q: How do I turn it on/off?
-**A:** Click the status bar icon (bottom right) or press Cmd+Shift+Y (Mac) / Ctrl+Shift+Y (Windows/Linux).
+**A:** Click the status bar icon (bottom right). `Cmd+Shift+Y` / `Ctrl+Shift+Y` runs Accept All Now, not the toggle.
 
 ---
 
 ## Safety & Security
 
 ### Q: Is this safe?
-**A:** Yes. Blocked commands prevent dangerous operations. You can customize the blocked list.
-
-Example blocked patterns: `rm -rf /`, `format`, `mkfs`, `del *`, `DROP TABLE`
+**A:** It will not accept unrelated notification popups, and it does not turn off workspace trust. Blocked shell commands are stopped when shell integration reports them: that terminal is closed and terminal auto-accept pauses for 60 seconds. A single word such as `del` matches the command name, not a lookalike like `delta`. This is not a sandbox. A blocked command can still start if shell integration is off and CDP is off.
 
 ### Q: Can I add my own blocked commands?
 **A:** Yes. Open settings, search `autoAcceptAgent.blockedCommands`, add patterns.
@@ -146,27 +144,20 @@ Check status bar (should say "ON") and run diagnostics: `Auto Accept: Run Diagno
 ## Notifications
 
 ### Q: Does this dismiss notifications?
-**A:** Only approval notifications (Run, Allow, Yes buttons).
+**A:** No. Auto Accept does not press the primary action on VS Code notifications.
 
-Other notifications stay visible.
-
-### Q: Can I disable notification interception?
-**A:** Yes. Set `autoAcceptAgent.interceptNotifications = false` in settings.
+`autoAcceptAgent.interceptNotifications` only lets the optional CDP fallback click Allow buttons inside the agent UI.
 
 ---
 
 ## Settings Management
 
 ### Q: What settings does Auto Accept modify?
-**A:** When toggled ON, it sets:
-- `chat.tools.autoApprove`
-- `chat.agent.autoApprove`
-- `chat.tools.terminal.enableAutoApprove`
-- `security.workspace.trust.enabled`
-- `terminal.integrated.confirmOnKill`
-- `terminal.integrated.confirmOnPaste`
+**A:** When toggled on, it sets chat auto-approve settings, terminal auto-approve, `chat.agent.maxRequests`, `terminal.integrated.confirmOnKill`, and `terminal.integrated.confirmOnPaste`.
 
-When toggled OFF, settings are restored to their original values.
+It does not set `security.workspace.trust.enabled`.
+
+Original values are saved before the first write and restored when you toggle off. If the editor crashes while they are overwritten, the next launch restores the snapshot.
 
 ### Q: Will I lose my settings?
 **A:** No. Original values are saved and restored perfectly.
@@ -270,4 +261,4 @@ We respond within 24 hours.
 
 ---
 
-**Last updated:** 2026-08-26
+**Last updated:** 2026-09-30

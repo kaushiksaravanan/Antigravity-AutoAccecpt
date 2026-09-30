@@ -2,6 +2,25 @@
 
 All notable changes to Auto Accept Antigravity are documented here.
 
+## [0.7.10] - 2026-09-30
+
+### Fixed
+- Stopped accepting every notification primary action. Unrelated prompts are left alone.
+- Stopped turning off workspace trust.
+- Blocked shell commands now close that terminal and pause terminal auto-accept. A single word matches the command name, not text inside another word.
+- Restored overwritten settings after a crash, using a snapshot taken before the first write.
+- Auto Accept stays off on a fresh install. The status-bar choice is remembered after that.
+- Command polling no longer disables settings, events, and CDP.
+- Cancelled pending timers on stop, and stopped fast-poll ticks from overlapping.
+- CDP attaches only to VS Code webviews on `autoAcceptAgent.cdpPort`.
+
+### Removed
+- RevenueCat paywall, which did not gate anything and trusted the webview to mark the user as Pro.
+
+### Changed
+- Split the engine into `catalog`, `blocked`, `settingsGuard`, and `cdpFallback`.
+- Moved manual checks under `test/manual/` and `docs/agent-test-suite.md`. Removed root scratch files.
+
 ## [0.7.8] - 2026-09-02
 
 ### Changed

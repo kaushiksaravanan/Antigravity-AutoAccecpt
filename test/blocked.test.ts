@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { DEFAULT_BLOCKED_COMMANDS } from '../src/catalog';
+import { findBlockedPattern } from '../src/blocked';
+
+const blocked = DEFAULT_BLOCKED_COMMANDS;
+
+test('blocks destructive command names and phrases', () => {
+    assert.equal(findBlockedPattern('del temp.txt', blocked), 'del');
+    assert.equal(findBlockedPattern('> del temp.txt', blocked), 'del');
+    assert.equal(findBlockedPattern('format E:', blocked), 'format');
+    assert.equal(findBlockedPattern('Format E:', blocked), 'format');
+    assert.equal(findBlockedPattern('Remove-Item -Recurse foo', blocked), 'Remove-Item');
+    assert.equal(findBlockedPattern('git push --force origin', blocked), 'git push --force');
+    assert.equal(findBlockedPattern('sudo rm -rf /tmp', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('rm -rf /', blocked), 'rm -rf /');
+    assert.equal(findBlockedPattern('cmd /c "del temp.txt"', blocked), 'del');
+    assert.equal(findBlockedPattern('powershell.exe -NoProfile -Command Remove-Item foo', blocked), 'Remove-Item');
+    assert.equal(findBlockedPattern('bash -lc "rm -rf /var"', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('echo ok && del temp.txt', blocked), 'del');
+    assert.equal(findBlockedPattern('C:\\Windows\\System32\\format.com E:', blocked), 'format');
+});
+
+test('blocks the same text when it is sitting in a UI snippet', () => {
+    const snippet = 'Agent wants to run this:\nrm -rf /\n';
+    assert.equal(findBlockedPattern(snippet, blocked), 'rm -rf /');
+});
+
+test('does not block lookalike safe commands', () => {
+    assert.equal(findBlockedPattern('git format-patch HEAD~1', blocked), null);
+    assert.equal(findBlockedPattern('git push --force-with-lease', blocked), null);
+    assert.equal(findBlockedPattern('echo hello', blocked), null);
+    assert.equal(findBlockedPattern('npx prettier --write src', blocked), null);
+    assert.equal(findBlockedPattern('Do you want to format the document?', blocked), null);
+    assert.equal(findBlockedPattern('forward the card', blocked), null);
+    assert.equal(findBlockedPattern('git status', blocked), null);
+});
+
+test('empty input does not match', () => {
+    assert.equal(findBlockedPattern('', blocked), null);
+    assert.equal(findBlockedPattern('del file', []), null);
+});
