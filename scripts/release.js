@@ -21,6 +21,7 @@ const LOCK_PATH = path.join(ROOT_DIR, 'package-lock.json');
 const README_PATH = path.join(ROOT_DIR, 'README.md');
 const CHANGELOG_PATH = path.join(ROOT_DIR, 'CHANGELOG.md');
 const VSCE_BIN = path.join(ROOT_DIR, 'node_modules', '@vscode', 'vsce', 'vsce');
+const TSC_BIN = path.join(ROOT_DIR, 'node_modules', 'typescript', 'bin', 'tsc');
 
 // Parse CLI flags
 const args = process.argv.slice(2);
@@ -69,8 +70,9 @@ Examples:
 
 // Helper to execute commands safely with argument arrays and token redaction
 function runCommand(command, cmdArgs, options = {}) {
+    const isPublish = String(command).includes('vsce') || cmdArgs.some(a => String(a).includes('publish'));
     const sanitizedArgs = cmdArgs.map((arg, idx, arr) => {
-        if (idx > 0 && (arr[idx - 1] === '-p' || arr[idx - 1] === '--token' || arr[idx - 1] === '--pat')) {
+        if (idx > 0 && ((isPublish && arr[idx - 1] === '-p') || arr[idx - 1] === '--token' || arr[idx - 1] === '--pat')) {
             return '********';
         }
         if (arg.startsWith('--token=') || arg.startsWith('--pat=')) {
@@ -79,10 +81,11 @@ function runCommand(command, cmdArgs, options = {}) {
         return arg;
     });
     console.log(`> ${command} ${sanitizedArgs.join(' ')}`);
+    const needsShell = process.platform === 'win32' && command !== 'node' && !command.endsWith('.exe');
     const res = spawnSync(command, cmdArgs, {
         cwd: ROOT_DIR,
         stdio: 'inherit',
-        shell: process.platform === 'win32',
+        shell: needsShell,
         ...options,
     });
     if (res.error) {
@@ -146,9 +149,8 @@ async function main() {
 
     // Pre-flight check: Run compilation and test suite before touching any metadata
     console.log('\n🧪 Running pre-flight test suite and compilation...');
-    const tscBin = path.join(ROOT_DIR, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
-    runCommand(tscBin, ['-p', './']);
-    runCommand(tscBin, ['-p', 'tsconfig.test.json']);
+    runCommand('node', [TSC_BIN, '-p', './']);
+    runCommand('node', [TSC_BIN, '-p', 'tsconfig.test.json']);
     runCommand('node', ['--test', 'out-test/test/blocked.test.js', 'out-test/test/scriptInspector.test.js', 'out-test/test/cdpFallback.test.js']);
     console.log('✅ Pre-flight checks passed.');
 
@@ -217,7 +219,7 @@ async function main() {
 
     // 6. Compile project with final version
     console.log('\n🔨 Compiling production TypeScript...');
-    runCommand(tscBin, ['-p', './']);
+    runCommand('node', [TSC_BIN, '-p', './']);
     console.log('✅ Compilation successful.');
 
     // 7. Determine packaging variants
