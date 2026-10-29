@@ -3,4 +3,5 @@ out/
 out-test/
 .vscode-test/
 *.vsix
+*.zip
 .DS_Store

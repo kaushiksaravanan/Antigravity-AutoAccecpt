@@ -78,17 +78,22 @@ export class SettingsGuard {
         this.log(`Settings applied: ${applied} updated, ${skipped} already set or unavailable.`);
     }
 
-    async restore(): Promise<void> {
+    async restore(): Promise<{ restored: number; remaining: number }> {
         const entries = this.read();
         if (!this.applied && entries.length === 0) {
-            return;
+            return { restored: 0, remaining: 0 };
         }
         this.log('Restoring previous settings.');
-        await this.restoreEntries(entries);
+        const result = await this.restoreEntries(entries);
         this.applied = false;
+        return result;
     }
 
-    private async restoreEntries(entries: PersistedSetting[]): Promise<void> {
+    hasPendingRestorations(): boolean {
+        return this.read().length > 0;
+    }
+
+    private async restoreEntries(entries: PersistedSetting[]): Promise<{ restored: number; remaining: number }> {
         const remaining: PersistedSetting[] = [];
         let restored = 0;
 
@@ -110,6 +115,7 @@ export class SettingsGuard {
 
         await this.write(remaining);
         this.log(`Settings restore finished: ${restored} updated, ${remaining.length} still pending.`);
+        return { restored, remaining: remaining.length };
     }
 
     private read(): PersistedSetting[] {

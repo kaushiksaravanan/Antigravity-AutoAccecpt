@@ -155,31 +155,45 @@ export class AutoAcceptor implements vscode.Disposable {
             return;
         }
 
-        this.startGeneration++;
-        const notify = options?.notify !== false;
-        const persistOff = options?.persistOff !== false;
-        if (persistOff) {
-            await this.context.globalState.update(ENABLED_STATE_KEY, false);
-        }
-
-        if (!this.isRunning) {
-            this.updateStatusBar('off');
-            return;
-        }
-
+        // Halt all activity immediately before persisting state or restoring settings,
+        // so a persistence or restoration error cannot leave polling/CDP running.
+        const wasRunning = this.isRunning;
         this.isRunning = false;
+        this.startGeneration++;
         this.stopCommandPolling();
         this.clearPendingTimers();
         this.cdp.stop();
         this.disposeTracking();
 
-        try {
-            await this.settings.restore();
-            this.updateStatusBar('off');
-            if (notify) {
-                void vscode.window.showInformationMessage('AutoAccept-Antigravity: Stopped');
+        const notify = options?.notify !== false;
+        const persistOff = options?.persistOff !== false;
+        if (persistOff) {
+            try {
+                await this.context.globalState.update(ENABLED_STATE_KEY, false);
+            } catch (err: unknown) {
+                this.log(`Failed to persist stopped state: ${errorMessage(err)}`);
             }
-            this.log('stopped');
+        }
+
+        if (!wasRunning) {
+            this.updateStatusBar('off');
+            return;
+        }
+
+        try {
+            const res = await this.settings.restore();
+            this.updateStatusBar('off');
+            if (res.remaining > 0) {
+                this.log(`Warning: ${res.remaining} setting(s) could not be restored automatically.`);
+                if (notify) {
+                    void vscode.window.showWarningMessage(`AutoAccept: Stopped, but ${res.remaining} setting(s) could not be restored.`);
+                }
+            } else {
+                if (notify) {
+                    void vscode.window.showInformationMessage('AutoAccept-Antigravity: Stopped');
+                }
+                this.log('stopped');
+            }
         } catch (err: unknown) {
             this.updateStatusBar('off');
             this.log(`stop error: ${errorMessage(err)}`);
@@ -265,12 +279,11 @@ export class AutoAcceptor implements vscode.Disposable {
     }
 
     private async fireCommands(commands: readonly string[]): Promise<void> {
-        const allowRun = this.shouldFireRunAccept();
         for (const command of commands) {
             if (!this.isRunning || this.isDisposed || this.isUserInteracting()) {
                 return;
             }
-            if (!allowRun && isRunAcceptCommand(command)) {
+            if (isRunAcceptCommand(command) && !this.shouldFireRunAccept()) {
                 continue;
             }
             try {
@@ -344,7 +357,7 @@ export class AutoAcceptor implements vscode.Disposable {
                 }
 
                 if (!blocked) {
-                    this.log(`Terminal command started: ${commandLine}`);
+                    this.log(`Terminal command started: ${sanitizeCommandLine(commandLine)}`);
                     return;
                 }
 
@@ -516,12 +529,11 @@ export class AutoAcceptor implements vscode.Disposable {
         if (this.isDisposed) {
             return;
         }
-        const allowRun = this.shouldFireRunAccept();
         for (const command of acceptNowCommands) {
             if (this.isDisposed) {
                 return;
             }
-            if (!allowRun && isRunAcceptCommand(command)) {
+            if (isRunAcceptCommand(command) && !this.shouldFireRunAccept()) {
                 continue;
             }
             try {
@@ -542,8 +554,14 @@ export class AutoAcceptor implements vscode.Disposable {
                 this.statusBarItem.tooltip = 'Auto Accept is on. Click to stop.';
                 this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
             } else {
-                this.statusBarItem.text = '$(x) Auto Accept: OFF';
-                this.statusBarItem.tooltip = 'Auto Accept is off. Click to start.';
+                const hasPending = this.settings.hasPendingRestorations();
+                if (hasPending) {
+                    this.statusBarItem.text = '$(warning) Auto Accept: OFF (Settings warning)';
+                    this.statusBarItem.tooltip = 'Auto Accept is off, but some settings could not be restored automatically. Check output.';
+                } else {
+                    this.statusBarItem.text = '$(x) Auto Accept: OFF';
+                    this.statusBarItem.tooltip = 'Auto Accept is off. Click to start.';
+                }
                 this.statusBarItem.backgroundColor = undefined;
             }
             this.statusBarItem.show();
@@ -572,4 +590,12 @@ function clampInterval(value: number): number {
 
 function errorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
+}
+
+function sanitizeCommandLine(cmd: string): string {
+    return cmd
+        .replace(/(Bearer\s+)[A-Za-z0-9_.\-]+/gi, '$1***')
+        .replace(/(gh[pousr]_[A-Za-z0-9_]+)/gi, 'gh*_***')
+        .replace(/(token|api[_-]?key|password|secret)[=:\s]+(["']?[^\s"']+["']?)/gi, '$1=***')
+        .replace(/(https?:\/\/[^:]+:)[^@]+(@)/gi, '$1***$2');
 }

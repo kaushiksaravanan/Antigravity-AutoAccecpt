@@ -6,8 +6,21 @@
   "autoAcceptAgent.enableCDP": false,
   "autoAcceptAgent.blockedCommands": [
     "rm -rf /",
+    "rm -rf",
+    "rm -r",
     "format",
-    "mkfs"
+    "mkfs",
+    "del",
+    "del *",
+    "rmdir",
+    "rd",
+    "erase",
+    "Remove-Item",
+    "git push --force",
+    "git reset --hard",
+    "git clean -fd",
+    "git clean -f",
+    "shred"
   ],
   "autoAcceptAgent.customButtonTexts": []
 }

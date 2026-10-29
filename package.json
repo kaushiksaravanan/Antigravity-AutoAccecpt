@@ -109,11 +109,13 @@
         },
         "autoAcceptAgent.allowBlindTerminalAccept": {
           "type": "boolean",
+          "scope": "application",
           "default": false,
           "description": "DANGEROUS: Auto-approve terminal execution even when CDP is disabled and command text cannot be inspected. When false (default), terminal commands require manual approval unless CDP is connected."
         },
         "autoAcceptAgent.blockedCommands": {
           "type": "array",
+          "scope": "application",
           "items": {
             "type": "string"
           },

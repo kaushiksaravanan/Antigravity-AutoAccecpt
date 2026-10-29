@@ -122,13 +122,42 @@ function afterFlag(tokens, flags) {
     return [];
 }
 
+function unwrapGitGlobals(tokens) {
+    var i = 1;
+    while (i < tokens.length) {
+        var t = tokens[i];
+        if (t === '-C' || t === '-c' || t === '--git-dir' || t === '--work-tree' || t === '--namespace' || t === '--exec-path') {
+            i += 2;
+            continue;
+        }
+        if (t.indexOf('--git-dir=') === 0 || t.indexOf('--work-tree=') === 0 || (t.indexOf('-C') === 0 && t.length > 2)) {
+            i += 1;
+            continue;
+        }
+        if (t.indexOf('-') === 0 && t !== '--') {
+            i += 1;
+            continue;
+        }
+        break;
+    }
+    if (i > 1 && i < tokens.length) {
+        return [tokens[0]].concat(tokens.slice(i));
+    }
+    return tokens;
+}
+
 function normalizeFlags(tokens) {
     if (tokens.length < 2) return tokens;
     var cmd = commandName(tokens[0]);
+    tokens = [cmd].concat(tokens.slice(1));
     if (cmd === 'rm') return normalizeRm(tokens);
-    if (cmd === 'git' && tokens.length > 2) {
-        if (tokens[1] === 'push') return normalizeGitPush(tokens);
-        if (tokens[1] === 'clean') return normalizeGitClean(tokens);
+    if (cmd === 'git') {
+        var unwrappedGit = unwrapGitGlobals(tokens);
+        if (unwrappedGit.length > 2) {
+            if (unwrappedGit[1] === 'push') return normalizeGitPush(unwrappedGit);
+            if (unwrappedGit[1] === 'clean') return normalizeGitClean(unwrappedGit);
+        }
+        return unwrappedGit;
     }
     return tokens;
 }
@@ -158,11 +187,19 @@ function normalizeRm(tokens) {
 }
 
 function normalizeGitPush(tokens) {
-    var result = [tokens[0], tokens[1]];
+    var hasForce = false;
+    var rest = [];
     for (var i = 2; i < tokens.length; i++) {
-        if (tokens[i] === '-f') result.push('--force');
-        else result.push(tokens[i]);
+        var t = tokens[i];
+        if (t === '-f' || t === '--force') {
+            hasForce = true;
+        } else {
+            rest.push(t);
+        }
     }
+    var result = [tokens[0], tokens[1]];
+    if (hasForce) result.push('--force');
+    for (var j = 0; j < rest.length; j++) result.push(rest[j]);
     return result;
 }
 
@@ -198,8 +235,14 @@ function matchSegment(segment, patterns, depth) {
     var tokens = unwrap(tokenize(segment), 0);
     if (tokens.length === 1 && /\s/.test(tokens[0])) return matchSegment(tokens[0], patterns, depth + 1);
     if (!tokens.length) return '';
-    var lower = normalizeFlags(tokens.map(function (token) { return token.toLowerCase(); }));
     var head = commandName(tokens[0]);
+    if (head === 'echo' || head === 'printf' || head === 'write-output' || head === 'print') {
+        return '';
+    }
+    var lower = normalizeFlags(tokens.map(function (token) { return token.toLowerCase(); }));
+    if (lower.length > 0) {
+        lower[0] = commandName(lower[0]);
+    }
     for (var p = 0; p < patterns.length; p++) {
         var expected = patternTokens(patterns[p]);
         if (!expected.length) continue;
@@ -213,7 +256,17 @@ function matchSegment(segment, patterns, depth) {
 }
 
 function matchPhrases(text, patterns) {
-    var lower = tokenize(text).map(function (token) { return token.toLowerCase(); });
+    var tokens = tokenize(text);
+    if (tokens.length > 0) {
+        var head = commandName(tokens[0]);
+        if (head === 'echo' || head === 'printf' || head === 'write-output' || head === 'print') {
+            return '';
+        }
+    }
+    var lower = tokens.map(function (token) { return token.toLowerCase(); });
+    if (lower.length > 0) {
+        lower[0] = commandName(lower[0]);
+    }
     for (var p = 0; p < patterns.length; p++) {
         var expected = patternTokens(patterns[p]);
         if (expected.length < 2) continue;

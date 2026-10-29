@@ -66,3 +66,25 @@ test('normalizes flags to catch equivalent destructive invocations', () => {
     assert.equal(findBlockedPattern('shred -u secret.txt', blocked), 'shred');
 });
 
+test('passes reviewer audit test cases without evasion or false alarms', () => {
+    // 1. Literal rm -rf
+    assert.equal(findBlockedPattern('rm -rf ./fixture', blocked), 'rm -rf');
+    // 2. Transposed flags rm -fr
+    assert.equal(findBlockedPattern('rm -fr ./fixture', blocked), 'rm -rf');
+    // 3. Separated flags rm -r -f
+    assert.equal(findBlockedPattern('rm -r -f ./fixture', blocked), 'rm -rf');
+    // 4. Long flags rm --recursive --force
+    assert.equal(findBlockedPattern('rm --recursive --force ./fixture', blocked), 'rm -rf');
+    // 5. Executable path /bin/rm -rf
+    assert.equal(findBlockedPattern('/bin/rm -rf ./fixture', blocked), 'rm -rf');
+    // 6. git push with remote before force flag
+    assert.equal(findBlockedPattern('git push origin --force', blocked), 'git push --force');
+    assert.equal(findBlockedPattern('git push origin -f', blocked), 'git push --force');
+    // 7. git with global -C option before destructive command
+    assert.equal(findBlockedPattern('git -C ./fixture reset --hard', blocked), 'git reset --hard');
+    // 8. echo printing destructive command text is not a command execution (no false alarm)
+    assert.equal(findBlockedPattern('echo rm -rf ./fixture', blocked), null);
+    assert.equal(findBlockedPattern('printf "rm -rf ./fixture\\n"', blocked), null);
+});
+
+

@@ -42,7 +42,7 @@ export class CdpFallback {
     private cycle = 0;
     private generation = 0;
     private readonly lastExpandTimes: Record<string, number> = {};
-
+    private currentWs: WebSocket | null = null;
     private connected = false;
 
     constructor(private readonly host: CdpHost) {}
@@ -72,6 +72,14 @@ export class CdpFallback {
         if (this.interval) {
             clearInterval(this.interval);
             this.interval = null;
+        }
+        if (this.currentWs) {
+            try {
+                this.currentWs.close();
+            } catch {
+                // Ignore socket close error
+            }
+            this.currentWs = null;
         }
     }
 
@@ -113,12 +121,16 @@ export class CdpFallback {
 
         await new Promise<void>((resolve) => {
             const ws = new WebSocket(browserWsUrl);
+            this.currentWs = ws;
             let settled = false;
             const finish = () => {
                 if (settled) {
                     return;
                 }
                 settled = true;
+                if (this.currentWs === ws) {
+                    this.currentWs = null;
+                }
                 resolve();
             };
             const timeout = setTimeout(() => {
@@ -196,7 +208,7 @@ export class CdpFallback {
             });
 
             ws.on('open', () => {
-                void this.evaluateTargets(send)
+                void this.evaluateTargets(send, generation)
                     .catch((err: unknown) => {
                         this.host.log(`CDP evaluate failed: ${errorMessage(err)}`);
                     })
@@ -209,7 +221,13 @@ export class CdpFallback {
         });
     }
 
-    private async evaluateTargets(send: (method: string, params?: Record<string, unknown>, sessionId?: string) => Promise<CdpResponse>): Promise<void> {
+    private async evaluateTargets(
+        send: (method: string, params?: Record<string, unknown>, sessionId?: string) => Promise<CdpResponse>,
+        generation: number,
+    ): Promise<void> {
+        if (this.generation !== generation || !this.host.isActive()) {
+            return;
+        }
         await send('Target.setDiscoverTargets', { discover: true });
         const targetsMsg = await send('Target.getTargets');
         const allTargets = targetsMsg.result?.targetInfos ?? [];
@@ -224,9 +242,15 @@ export class CdpFallback {
         }
 
         await Promise.allSettled(webviews.map(async (target) => {
+            if (this.generation !== generation || !this.host.isActive()) {
+                return;
+            }
             let sessionId: string | undefined;
             try {
                 const attach = await send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+                if (this.generation !== generation || !this.host.isActive()) {
+                    return;
+                }
                 sessionId = attach.result?.sessionId;
                 if (!sessionId) {
                     return;
@@ -302,7 +326,14 @@ export class CdpFallback {
 }
 
 function isExtensionWebview(target: CdpTargetInfo): boolean {
-    return (target.url ?? '').includes('vscode-webview');
+    const url = target.url ?? '';
+    if (url.startsWith('vscode-webview://') || url.startsWith('vscode-file://')) {
+        return true;
+    }
+    if (/^https?:\/\//i.test(url)) {
+        return false;
+    }
+    return url.includes('vscode-webview');
 }
 
 function buildPermissionScript(
@@ -383,7 +414,10 @@ var CAN_EXPAND = ${canExpand ? 'true' : 'false'};
                 }
                 container = container.parentElement;
             }
-            var containerText = ((container || document.body).innerText || '').slice(0, 4000);
+            var containerText = ((container || document.body).innerText || '').slice(0, 65536);
+            if (text === 'run' && !containerText.trim()) {
+                return 'missing-container-text';
+            }
             var blocked = findBlockedPattern(containerText, BLOCKED_CMDS);
             if (blocked) return 'blocked:' + blocked;
 
