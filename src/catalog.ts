@@ -50,21 +50,21 @@ export function isRunAcceptCommand(command: string): boolean {
 
 /**
  * Settings that auto-approve file edits and agent steps.
- * These are always safe to apply — they do not execute arbitrary commands.
+ * These are safe to apply — they do not execute arbitrary terminal commands.
  */
 export const editAutoApproveSettings: ReadonlyArray<readonly [string, string, unknown]> = [
-    ['chat.tools', 'autoApprove', true],
-    ['chat.tools.global', 'autoApprove', true],
+    ['chat.tools.edits', 'autoApprove', true],
     ['chat.agent', 'autoApprove', true],
     ['chat.agent', 'maxRequests', 999],
 ];
 
 /**
  * Settings that auto-approve terminal and command execution.
- * Only safe when CDP can inspect the command text, or when the user
- * explicitly accepts the risk of blind terminal acceptance.
+ * Only applied when terminal execution auto-approval is explicitly enabled,
+ * because chat.tools.global.autoApprove bypasses user approval on all tools.
  */
 export const terminalAutoApproveSettings: ReadonlyArray<readonly [string, string, unknown]> = [
+    ['chat.tools.global', 'autoApprove', true],
     ['chat.tools.terminal', 'enableAutoApprove', true],
     ['chat.tools.terminal', 'autoApprove', true],
     ['chat.tools.run_command', 'autoApprove', true],

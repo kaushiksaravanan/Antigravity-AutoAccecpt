@@ -1,6 +1,7 @@
 import * as http from 'http';
 import WebSocket = require('ws');
-import { FIND_BLOCKED_SOURCE } from './blocked';
+import { FIND_BLOCKED_SOURCE, findBlockedPattern } from './blocked';
+import { inspectCommand } from './scriptInspector';
 
 export interface CdpHost {
     isActive(): boolean;
@@ -10,9 +11,11 @@ export interface CdpHost {
     blockedCommands(): readonly string[];
     customButtonTexts(): readonly string[];
     interceptLooseButtons(): boolean;
+    workspaceRoots(): readonly string[];
+    unknownScriptPolicy(): 'warn' | 'block';
 }
 
-interface CdpTargetInfo {
+export interface CdpTargetInfo {
     targetId: string;
     type: string;
     url?: string;
@@ -117,7 +120,6 @@ export class CdpFallback {
             }
             return;
         }
-        this.connected = true;
 
         await new Promise<void>((resolve) => {
             const ws = new WebSocket(browserWsUrl);
@@ -128,6 +130,7 @@ export class CdpFallback {
                     return;
                 }
                 settled = true;
+                this.connected = false;
                 if (this.currentWs === ws) {
                     this.currentWs = null;
                 }
@@ -197,6 +200,7 @@ export class CdpFallback {
             });
 
             ws.on('error', () => {
+                this.connected = false;
                 clearTimeout(timeout);
                 rejectPending(new Error('CDP socket error'));
                 ws.close();
@@ -204,10 +208,12 @@ export class CdpFallback {
             });
 
             ws.on('close', () => {
+                this.connected = false;
                 rejectPending(new Error('CDP socket closed'));
             });
 
             ws.on('open', () => {
+                this.connected = true;
                 void this.evaluateTargets(send, generation)
                     .catch((err: unknown) => {
                         this.host.log(`CDP evaluate failed: ${errorMessage(err)}`);
@@ -267,13 +273,79 @@ export class CdpFallback {
                 const evalMsg = await send('Runtime.evaluate', { expression }, sessionId);
                 const result = evalMsg.result?.result?.value;
 
-                if (typeof result === 'string' && result.startsWith('clicked:')) {
-                    if (result.includes('expand') || result.includes('requires input')) {
-                        this.lastExpandTimes[target.targetId] = Date.now();
+                if (typeof result === 'string') {
+                    if (result.startsWith('{')) {
+                        try {
+                            const candidate = JSON.parse(result) as {
+                                status?: string;
+                                targetId?: string;
+                                buttonText?: string;
+                                candidates?: string[];
+                            };
+                            if (candidate.status === 'candidate' && candidate.targetId && candidate.buttonText) {
+                                let blockedReason: string | null = null;
+                                const roots = this.host.workspaceRoots();
+                                const blockedList = this.host.blockedCommands();
+                                const policy = this.host.unknownScriptPolicy();
+
+                                for (const cmd of candidate.candidates ?? []) {
+                                    const directBlocked = findBlockedPattern(cmd, blockedList);
+                                    if (directBlocked) {
+                                        blockedReason = directBlocked;
+                                        break;
+                                    }
+                                    const scriptBlocked = inspectCommand(
+                                        cmd,
+                                        roots,
+                                        blockedList,
+                                        (m) => this.host.log(m),
+                                        { unknownScriptPolicy: policy },
+                                    );
+                                    if (scriptBlocked) {
+                                        blockedReason = `script inspector: ${scriptBlocked}`;
+                                        break;
+                                    }
+                                }
+
+                                if (blockedReason) {
+                                    await send('Runtime.evaluate', {
+                                        expression: `(function() {
+                                            var el = document.querySelector('[data-aa-target="${candidate.targetId}"]');
+                                            if (el) el.removeAttribute('data-aa-target');
+                                        })()`,
+                                    }, sessionId).catch(() => undefined);
+                                    this.host.log(`CDP refused a button: ${blockedReason}`);
+                                } else {
+                                    const clickMsg = await send('Runtime.evaluate', {
+                                        expression: `(function() {
+                                            var el = document.querySelector('[data-aa-target="${candidate.targetId}"]');
+                                            if (!el) return 'target-lost';
+                                            el.removeAttribute('data-aa-target');
+                                            el.setAttribute('data-aa-t', '' + Date.now());
+                                            el.click();
+                                            return 'clicked:${candidate.buttonText}';
+                                        })()`,
+                                    }, sessionId);
+                                    const clickResult = clickMsg.result?.result?.value;
+                                    if (typeof clickResult === 'string' && clickResult.startsWith('clicked:')) {
+                                        if (clickResult.includes('expand') || clickResult.includes('requires input')) {
+                                            this.lastExpandTimes[target.targetId] = Date.now();
+                                        }
+                                        this.host.log(`CDP ${target.targetId.slice(0, 6)} -> ${clickResult}`);
+                                    }
+                                }
+                            }
+                        } catch {
+                            // Malformed candidate JSON
+                        }
+                    } else if (result.startsWith('clicked:')) {
+                        if (result.includes('expand') || result.includes('requires input')) {
+                            this.lastExpandTimes[target.targetId] = Date.now();
+                        }
+                        this.host.log(`CDP ${target.targetId.slice(0, 6)} -> ${result}`);
+                    } else if (result.startsWith('blocked:')) {
+                        this.host.log(`CDP refused a button: ${result}`);
                     }
-                    this.host.log(`CDP ${target.targetId.slice(0, 6)} -> ${result}`);
-                } else if (typeof result === 'string' && result.startsWith('blocked:')) {
-                    this.host.log(`CDP refused a button: ${result}`);
                 }
             } catch {
                 // The target can close between listing and attaching.
@@ -325,9 +397,12 @@ export class CdpFallback {
     }
 }
 
-function isExtensionWebview(target: CdpTargetInfo): boolean {
+export function isExtensionWebview(target: CdpTargetInfo): boolean {
     const url = target.url ?? '';
-    if (url.startsWith('vscode-webview://') || url.startsWith('vscode-file://')) {
+    if (url.startsWith('vscode-file://')) {
+        return false;
+    }
+    if (url.startsWith('vscode-webview://')) {
         return true;
     }
     if (/^https?:\/\//i.test(url)) {
@@ -336,7 +411,7 @@ function isExtensionWebview(target: CdpTargetInfo): boolean {
     return url.includes('vscode-webview');
 }
 
-function buildPermissionScript(
+export function buildPermissionScript(
     customTexts: readonly string[],
     blockedCommands: readonly string[],
     interceptLooseButtons: boolean,
@@ -414,8 +489,13 @@ var CAN_EXPAND = ${canExpand ? 'true' : 'false'};
                 }
                 container = container.parentElement;
             }
-            var containerText = ((container || document.body).innerText || '').slice(0, 65536);
-            if (text === 'run' && !containerText.trim()) {
+
+            var rawText = ((container || document.body).innerText || '');
+            if (rawText.length > 65536) {
+                return 'blocked:container-text-oversized';
+            }
+            var containerText = rawText;
+            if (!containerText.trim()) {
                 return 'missing-container-text';
             }
             var blocked = findBlockedPattern(containerText, BLOCKED_CMDS);
@@ -423,7 +503,32 @@ var CAN_EXPAND = ${canExpand ? 'true' : 'false'};
 
             var lastClickTime = parseInt(clickable.getAttribute('data-aa-t') || '0', 10);
             if (lastClickTime && (Date.now() - lastClickTime < 5000)) return null;
-            return clickable;
+
+            // Extract candidate commands for pre-approval script inspection
+            var candidates = [];
+            var codeEls = (container || document.body).querySelectorAll('pre, code, .terminal-command, .monaco-editor, [class*="code"], [class*="command"]');
+            for (var c = 0; c < codeEls.length; c++) {
+                var codeText = (codeEls[c].innerText || codeEls[c].textContent || '').trim();
+                if (codeText && codeText.length < 2048 && candidates.indexOf(codeText) === -1) {
+                    candidates.push(codeText);
+                }
+            }
+            var lines = containerText.split(/[\\r\\n]+/);
+            for (var l = 0; l < lines.length; l++) {
+                var line = lines[l].trim();
+                if (line && line.length < 2048 && candidates.indexOf(line) === -1) {
+                    candidates.push(line);
+                }
+            }
+
+            var targetId = 'aa-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);
+            clickable.setAttribute('data-aa-target', targetId);
+            return JSON.stringify({
+                status: 'candidate',
+                targetId: targetId,
+                buttonText: text,
+                candidates: candidates
+            });
         }
         return null;
     }
@@ -431,10 +536,7 @@ var CAN_EXPAND = ${canExpand ? 'true' : 'false'};
     for (var t = 0; t < BUTTON_TEXTS.length; t++) {
         var btn = findButton(document.body, BUTTON_TEXTS[t]);
         if (!btn) continue;
-        if (typeof btn === 'string') return btn;
-        btn.setAttribute('data-aa-t', '' + Date.now());
-        btn.click();
-        return 'clicked:' + BUTTON_TEXTS[t];
+        return btn;
     }
 
     if (typeof CAN_EXPAND === 'undefined' || CAN_EXPAND) {
@@ -442,10 +544,21 @@ var CAN_EXPAND = ${canExpand ? 'true' : 'false'};
         for (var e = 0; e < expandTexts.length; e++) {
             var expBtn = findButton(document.body, expandTexts[e]);
             if (!expBtn) continue;
-            if (typeof expBtn === 'string') return expBtn;
-            expBtn.setAttribute('data-aa-t', '' + Date.now());
-            expBtn.click();
-            return 'clicked:' + expandTexts[e];
+            if (typeof expBtn === 'string') {
+                if (expBtn.indexOf('{') === 0) {
+                    try {
+                        var parsed = JSON.parse(expBtn);
+                        var el = document.querySelector('[data-aa-target="' + parsed.targetId + '"]');
+                        if (el) {
+                            el.removeAttribute('data-aa-target');
+                            el.setAttribute('data-aa-t', '' + Date.now());
+                            el.click();
+                            return 'clicked:' + expandTexts[e];
+                        }
+                    } catch (e2) {}
+                }
+                return expBtn;
+            }
         }
     }
     return 'no-permission-button';

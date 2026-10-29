@@ -158,15 +158,14 @@ function tokenize(segment) {
 
 function commandName(token) {
     var base = String(token);
-    var slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
-    if (slash >= 0) {
-        if (base.charAt(slash) === '\\' && base.indexOf('/') === -1 && base.indexOf(':') === -1) {
-            var after = base.slice(slash + 1);
-            if (!after.includes('.') && base.length <= 4) {
-                return base.replace(/\\/g, '').toLowerCase();
-            }
-        }
-        base = base.slice(slash + 1);
+    var isPath = base.indexOf('/') !== -1 || base.indexOf(':') !== -1 ||
+                 (base.indexOf('\\') !== -1 && base.indexOf('\\') !== base.lastIndexOf('\\')) ||
+                 base.indexOf('.\\') === 0 || base.indexOf('..\\') === 0;
+    if (isPath) {
+        var slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+        if (slash >= 0) base = base.slice(slash + 1);
+    } else {
+        base = base.replace(/\\/g, '');
     }
     return base.replace(/\.(exe|com|cmd|bat|ps1)$/i, '').toLowerCase();
 }

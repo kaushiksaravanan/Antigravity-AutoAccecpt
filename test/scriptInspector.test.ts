@@ -25,6 +25,188 @@ test('scriptInspector: detects blocked patterns inside shell scripts', () => {
     }
 });
 
+test('scriptInspector: inspects ./cleanup.sh without arguments', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const scriptPath = path.join(tmpDir, 'cleanup.sh');
+        fs.writeFileSync(scriptPath, '#!/bin/bash\nrm -rf /tmp/target\n');
+
+        const hit = inspectCommand('./cleanup.sh', [tmpDir], blocked, noopLog);
+        assert.equal(hit, 'rm -rf');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: unwraps execution wrappers like sudo, env, and env vars', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const scriptPath = path.join(tmpDir, 'cleanup.sh');
+        fs.writeFileSync(scriptPath, '#!/bin/bash\nrm -rf /tmp/target\n');
+
+        assert.equal(inspectCommand('sudo bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+        assert.equal(inspectCommand('env bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+        assert.equal(inspectCommand('NODE_ENV=production sudo bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: follows nested child scripts invoked from a script', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const childPath = path.join(tmpDir, 'child.sh');
+        fs.writeFileSync(childPath, '#!/bin/bash\nrm -rf /data\n');
+
+        const parentPath = path.join(tmpDir, 'parent.sh');
+        fs.writeFileSync(parentPath, '#!/bin/bash\necho "Running child"\nbash child.sh\n');
+
+        assert.equal(inspectCommand('bash parent.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: inspects Python package initialization (__init__.py)', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const pkgDir = path.join(tmpDir, 'cleanpkg');
+        fs.mkdirSync(pkgDir);
+        fs.writeFileSync(path.join(pkgDir, '__init__.py'), 'import os\nos.system("rm -rf /")\n');
+
+        const mainPy = path.join(tmpDir, 'main.py');
+        fs.writeFileSync(mainPy, 'import cleanpkg\nprint("started")\n');
+
+        assert.equal(inspectCommand('python main.py', [tmpDir], blocked, noopLog), 'rm -rf /');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: detects aliased destructive imports in Python', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const pyPath = path.join(tmpDir, 'aliased.py');
+        fs.writeFileSync(pyPath, 'from shutil import rmtree\nrmtree("/data")\n');
+
+        assert.equal(inspectCommand('python aliased.py', [tmpDir], blocked, noopLog), 'shutil.rmtree');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: follows JavaScript require("./cleanup.js") and aliased imports', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const depPath = path.join(tmpDir, 'cleanup.js');
+        fs.writeFileSync(depPath, 'const { rmSync } = require("fs");\nrmSync("./data", { recursive: true });\n');
+
+        const mainJs = path.join(tmpDir, 'main.js');
+        fs.writeFileSync(mainJs, 'require("./cleanup.js");\nconsole.log("running");\n');
+
+        assert.equal(inspectCommand('node main.js', [tmpDir], blocked, noopLog), 'fs.rmSync');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: inspects npm lifecycle hooks (prebuild, postbuild)', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const pkgPath = path.join(tmpDir, 'package.json');
+        fs.writeFileSync(pkgPath, JSON.stringify({
+            name: 'hook-pkg',
+            scripts: {
+                prebuild: 'rm -rf dist',
+                build: 'echo "compiling"',
+            },
+        }));
+
+        assert.equal(inspectCommand('npm run build', [tmpDir], blocked, noopLog), 'rm -rf');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: guards against cycles in npm script recursion', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const pkgPath = path.join(tmpDir, 'package.json');
+        fs.writeFileSync(pkgPath, JSON.stringify({
+            name: 'cycle-pkg',
+            scripts: {
+                a: 'npm run b',
+                b: 'npm run a',
+            },
+        }));
+
+        // Does not infinite loop or stack overflow
+        assert.equal(inspectCommand('npm run a', [tmpDir], blocked, noopLog), null);
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: unknownScriptPolicy blocks depth-exceeded, oversized, unresolvable, and unreadable', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        // 1. Unresolvable
+        assert.equal(
+            inspectCommand('bash nonexistent.sh', [tmpDir], blocked, noopLog, { unknownScriptPolicy: 'warn' }),
+            null,
+        );
+        assert.equal(
+            inspectCommand('bash nonexistent.sh', [tmpDir], blocked, noopLog, { unknownScriptPolicy: 'block' }),
+            'unresolvable-script',
+        );
+
+        // 2. Oversized script (>64 KB)
+        const hugePath = path.join(tmpDir, 'huge.sh');
+        const hugeBuf = Buffer.alloc(70_000, 32); // 70 KB of spaces
+        fs.writeFileSync(hugePath, hugeBuf);
+        assert.equal(
+            inspectCommand('bash huge.sh', [tmpDir], blocked, noopLog, { unknownScriptPolicy: 'block' }),
+            'oversized-script',
+        );
+        assert.equal(
+            inspectCommand('bash huge.sh', [tmpDir], blocked, noopLog, { unknownScriptPolicy: 'warn' }),
+            null,
+        );
+
+        // 3. Depth exceeded
+        let prev = 'depth_base.sh';
+        fs.writeFileSync(path.join(tmpDir, prev), '#!/bin/bash\necho ok\n');
+        for (let i = 1; i <= 5; i++) {
+            const next = `depth_${i}.sh`;
+            fs.writeFileSync(path.join(tmpDir, next), `#!/bin/bash\nbash ${prev}\n`);
+            prev = next;
+        }
+        assert.equal(
+            inspectCommand(`bash depth_5.sh`, [tmpDir], blocked, noopLog, { unknownScriptPolicy: 'block' }),
+            'depth-exceeded',
+        );
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: resolves relative paths using working directory cwd', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const subDir = path.join(tmpDir, 'subdir');
+        fs.mkdirSync(subDir);
+        fs.writeFileSync(path.join(subDir, 'local.sh'), '#!/bin/bash\nrm -rf /tmp/local\n');
+
+        // Path resolved against cwd (subDir), even if not in workspace root directly
+        assert.equal(
+            inspectCommand('bash local.sh', [tmpDir], blocked, noopLog, {}, subDir),
+            'rm -rf',
+        );
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
 test('scriptInspector: detects blocked patterns inside python scripts', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
     try {
@@ -59,26 +241,6 @@ test('scriptInspector: detects blocked patterns inside npm run scripts in packag
     }
 });
 
-test('scriptInspector: detects nested script invocation via npm run', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
-    try {
-        const scriptPath = path.join(tmpDir, 'destroy.sh');
-        fs.writeFileSync(scriptPath, '#!/bin/bash\nshred -u secret.txt\n');
-
-        const pkgPath = path.join(tmpDir, 'package.json');
-        fs.writeFileSync(pkgPath, JSON.stringify({
-            name: 'test-pkg',
-            scripts: {
-                cleanup: 'bash destroy.sh',
-            },
-        }));
-
-        assert.equal(inspectCommand('npm run cleanup', [tmpDir], blocked, noopLog), 'shred');
-    } finally {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-});
-
 test('scriptInspector: allows safe commands and non-script commands', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
     try {
@@ -88,60 +250,6 @@ test('scriptInspector: allows safe commands and non-script commands', () => {
         assert.equal(inspectCommand(`bash ${scriptPath}`, [tmpDir], blocked, noopLog), null);
         assert.equal(inspectCommand('ls -la', [tmpDir], blocked, noopLog), null);
         assert.equal(inspectCommand('echo "rm -rf is dangerous"', [tmpDir], blocked, noopLog), null);
-    } finally {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-});
-
-test('scriptInspector: detects native language deletion APIs in python and node', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
-    try {
-        // Python shutil.rmtree
-        const pyPath = path.join(tmpDir, 'clean.py');
-        fs.writeFileSync(pyPath, 'import shutil\nshutil.rmtree("/tmp/target")\n');
-        assert.equal(inspectCommand(`python clean.py`, [tmpDir], blocked, noopLog), 'shutil.rmtree');
-
-        // Node fs.rmSync
-        const jsPath = path.join(tmpDir, 'clean.js');
-        fs.writeFileSync(jsPath, 'const fs = require("fs");\nfs.rmSync("/tmp/target", { recursive: true });\n');
-        assert.equal(inspectCommand(`node clean.js`, [tmpDir], blocked, noopLog), 'fs.rmSync');
-    } finally {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-});
-
-test('scriptInspector: follows sourced shell scripts and local python imports', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
-    try {
-        // Nested shell script via source
-        const helperPath = path.join(tmpDir, 'helpers.sh');
-        fs.writeFileSync(helperPath, 'rm -rf /tmp/data\n');
-        const mainShPath = path.join(tmpDir, 'main.sh');
-        fs.writeFileSync(mainShPath, '#!/bin/bash\nsource helpers.sh\n');
-        assert.equal(inspectCommand(`bash main.sh`, [tmpDir], blocked, noopLog), 'rm -rf');
-
-        // Nested Python module via import
-        const destroyMod = path.join(tmpDir, 'wipe_helper.py');
-        fs.writeFileSync(destroyMod, 'import shutil\nshutil.rmtree("/tmp/app")\n');
-        const mainPy = path.join(tmpDir, 'main.py');
-        fs.writeFileSync(mainPy, 'import wipe_helper\nprint("done")\n');
-        assert.equal(inspectCommand(`python main.py`, [tmpDir], blocked, noopLog), 'shutil.rmtree');
-    } finally {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-});
-
-test('scriptInspector: unknownScriptPolicy blocks unresolvable scripts when set to block', () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
-    try {
-        assert.equal(
-            inspectCommand('bash non_existent.sh', [tmpDir], blocked, noopLog, { unknownScriptPolicy: 'warn' }),
-            null,
-        );
-        assert.equal(
-            inspectCommand('bash non_existent.sh', [tmpDir], blocked, noopLog, { unknownScriptPolicy: 'block' }),
-            'unresolvable-script',
-        );
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }

@@ -7,7 +7,7 @@
  *  1. Auto-increments version on each update / package (patch/minor/major/sync-openvsx)
  *  2. Syncs version across package.json, package-lock.json, and README.md
  *  3. Generates release variants (Universal stable, Pre-Release preview)
- *  4. Supports publishing to Open VSX and VS Code Marketplace
+ *  4. Supports publishing to Open VSX and VS Code Marketplace safely
  */
 
 const fs = require('fs');
@@ -67,9 +67,18 @@ Examples:
     process.exit(0);
 }
 
-// Helper to execute commands safely with argument arrays
+// Helper to execute commands safely with argument arrays and token redaction
 function runCommand(command, cmdArgs, options = {}) {
-    console.log(`> ${command} ${cmdArgs.join(' ')}`);
+    const sanitizedArgs = cmdArgs.map((arg, idx, arr) => {
+        if (idx > 0 && (arr[idx - 1] === '-p' || arr[idx - 1] === '--token' || arr[idx - 1] === '--pat')) {
+            return '********';
+        }
+        if (arg.startsWith('--token=') || arg.startsWith('--pat=')) {
+            return arg.split('=')[0] + '=********';
+        }
+        return arg;
+    });
+    console.log(`> ${command} ${sanitizedArgs.join(' ')}`);
     const res = spawnSync(command, cmdArgs, {
         cwd: ROOT_DIR,
         stdio: 'inherit',
@@ -80,7 +89,7 @@ function runCommand(command, cmdArgs, options = {}) {
         throw res.error;
     }
     if (res.status !== 0) {
-        throw new Error(`Command failed with exit code ${res.status}: ${command} ${cmdArgs.join(' ')}`);
+        throw new Error(`Command failed with exit code ${res.status}: ${command} ${sanitizedArgs.join(' ')}`);
     }
     return res;
 }
@@ -140,7 +149,7 @@ async function main() {
     const tscBin = path.join(ROOT_DIR, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
     runCommand(tscBin, ['-p', './']);
     runCommand(tscBin, ['-p', 'tsconfig.test.json']);
-    runCommand('node', ['--test', 'out-test/test/blocked.test.js', 'out-test/test/scriptInspector.test.js']);
+    runCommand('node', ['--test', 'out-test/test/blocked.test.js', 'out-test/test/scriptInspector.test.js', 'out-test/test/cdpFallback.test.js']);
     console.log('✅ Pre-flight checks passed.');
 
     const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf-8'));
@@ -196,7 +205,7 @@ async function main() {
             let changelog = fs.readFileSync(CHANGELOG_PATH, 'utf-8');
             if (!changelog.includes(`## [${nextVersion}]`)) {
                 const today = new Date().toISOString().split('T')[0];
-                const newEntry = `\n## [${nextVersion}] - ${today}\n\n### Changed\n- Security hardening and pre-execution gate improvements\n- Bug fixes and stability enhancements\n`;
+                const newEntry = `\n## [${nextVersion}] - ${today}\n\n### Changed\n- Pre-execution CDP script inspection and container validation\n- Script recursion cycles, wrapper commands, and child scripts coverage\n- Publishing token redaction and security hardening\n`;
                 changelog = changelog.replace('# Changelog\n', `# Changelog\n${newEntry}`);
                 fs.writeFileSync(CHANGELOG_PATH, changelog);
                 console.log(`✅ Added v${nextVersion} entry to CHANGELOG.md`);
@@ -270,11 +279,13 @@ async function main() {
             console.log(`📤 Publishing ${primaryVsix} to VS Code Marketplace...`);
             const vsceToken = getArgValue('--token', null) || process.env.VSCE_PAT;
             try {
-                const vsceArgs = ['publish', '--packagePath', primaryVsix];
+                // Pass token via environment variable VSCE_PAT to avoid command-line exposure
+                const env = { ...process.env };
                 if (vsceToken) {
-                    vsceArgs.push('-p', vsceToken);
+                    env.VSCE_PAT = vsceToken;
                 }
-                runCommand('node', [VSCE_BIN, ...vsceArgs]);
+                const vsceArgs = ['publish', '--packagePath', primaryVsix];
+                runCommand('node', [VSCE_BIN, ...vsceArgs], { env });
                 console.log('🎉 Successfully published to VS Code Marketplace!');
             } catch (err) {
                 console.error('❌ VS Code Marketplace publish failed:', err.message);

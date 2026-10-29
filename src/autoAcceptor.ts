@@ -65,6 +65,8 @@ export class AutoAcceptor implements vscode.Disposable {
             blockedCommands: () => this.blockedCommands(),
             customButtonTexts: () => this.customButtonTexts(),
             interceptLooseButtons: () => this.interceptLooseButtons(),
+            workspaceRoots: () => this.workspaceFolders(),
+            unknownScriptPolicy: () => vscode.workspace.getConfiguration('autoAcceptAgent').get<'warn' | 'block'>('unknownScriptPolicy', 'warn'),
         });
 
         this.lifetimeDisposables.push(vscode.workspace.onDidChangeConfiguration((event) => {
@@ -104,15 +106,15 @@ export class AutoAcceptor implements vscode.Disposable {
 
         try {
             if (this.autoConfigureSettings()) {
-                const safeForTerminal = this.cdpEnabled() || this.allowBlindTerminalAccept();
+                const safeForTerminal = this.allowBlindTerminalAccept();
                 const settingsToApply = safeForTerminal
                     ? [...editAutoApproveSettings, ...terminalAutoApproveSettings]
                     : [...editAutoApproveSettings];
                 await this.settings.apply(settingsToApply);
                 if (!safeForTerminal) {
                     this.log(
-                        'Terminal auto-approve settings NOT applied (CDP is off and allowBlindTerminalAccept is off). ' +
-                        'Terminal commands will require manual approval.',
+                        'Terminal auto-approve settings NOT applied (allowBlindTerminalAccept is off). ' +
+                        'Terminal commands will be approved via CDP (with script inspection) or require manual approval.',
                     );
                 }
             }
@@ -346,12 +348,14 @@ export class AutoAcceptor implements vscode.Disposable {
                 if (!blocked) {
                     try {
                         const policy = vscode.workspace.getConfiguration('autoAcceptAgent').get<'warn' | 'block'>('unknownScriptPolicy', 'warn');
+                        const termCwd = (event.terminal as unknown as { shellIntegration?: { cwd?: { fsPath?: string } } })?.shellIntegration?.cwd?.fsPath;
                         blocked = inspectCommand(
                             commandLine,
                             this.workspaceFolders(),
                             this.blockedCommands(),
                             (msg) => this.log(msg),
                             { unknownScriptPolicy: policy },
+                            termCwd,
                         );
                     } catch (err: unknown) {
                         this.log(`Script inspection error: ${errorMessage(err)}`);
