@@ -16,7 +16,12 @@
 ## Safety & Security
 
 ### Q: Is this safe?
-**A:** It will not accept unrelated notification popups, and it does not turn off workspace trust. Blocked shell commands are stopped when shell integration reports them: that terminal is closed and terminal auto-accept pauses for 60 seconds. A single word such as `del` matches the command name, not a lookalike like `delta`. This is not a sandbox. A blocked command can still start if shell integration is off and CDP is off.
+**A:** Auto Accept Antigravity operates with a fail-closed pre-execution boundary:
+1. **Pre-Execution Gating:** When CDP inspection is disabled or disconnected, terminal command approvals are withheld by default. Blind approvals require explicit opt-in via `autoAcceptAgent.allowBlindTerminalAccept`.
+2. **Flag Canonicalization:** Flag reordering, concatenated flags (e.g., `rm -fr`, `rm -r -f`), executable paths (`/bin/rm`), and git option flags (`git push origin --force`, `git -C ./dir reset --hard`) are canonicalized before matching.
+3. **Script Inspection:** Referenced local scripts (`bash`, `sh`, `python`, `node`, `npm run`) are resolved from the workspace and inspected for destructive patterns prior to approval.
+4. **Shell Integration Safeguard:** If an uninspected destructive command starts, shell integration detection immediately sends an interrupt signal (`Ctrl+C`), disposes the terminal, and pauses terminal auto-accept for 60 seconds.
+5. **Operating System Boundary:** This extension is a pre-execution approval gate and pattern inspector, not a virtualized OS sandbox. Untrusted code involving dynamic execution, remote downloads, or compiled binaries should be run inside isolated dev containers or sandboxes.
 
 ### Q: Can I add my own blocked commands?
 **A:** Yes. Open settings, search `autoAcceptAgent.blockedCommands`, add patterns.
@@ -34,21 +39,21 @@ We do NOT see your code, commands, or personal info.
 ---
 
 ## Performance
-
+ 
 ### Q: Will this slow down VS Code?
-**A:** No. Polling runs at low priority (800ms default). CPU impact: <0.5%.
+**A:** In typical local testing, polling overhead is minimal. Polling runs via `setInterval` with overlap guards at configurable intervals (800ms default), with estimated CPU impact <0.5%.
 
 ### Q: Can I make it faster?
-**A:** Lower `pollIntervalMs` in settings (default 800ms):
-- 400ms = very fast (higher CPU)
+**A:** Adjust `pollIntervalMs` in settings (default 800ms):
+- 400ms = faster response (higher CPU activity)
 - 800ms = balanced (default)
-- 1500ms = slow polling (lower CPU)
+- 1500ms = slower polling (lowest CPU impact)
 
 ### Q: Should I enable CDP?
-**A:** Only if command polling isn't reaching approval buttons. CDP adds ~0.2% CPU overhead.
+**A:** Only if command polling isn't reaching approval buttons or if you require pre-execution inspection of button action contexts. CDP adds ~0.2% estimated CPU activity.
 
 ### Q: What's the memory impact?
-**A:** ~15-20 MB. Negligible on modern machines.
+**A:** Typically ~15-25 MB memory footprint.
 
 ---
 

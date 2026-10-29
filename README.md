@@ -2,7 +2,7 @@
 
 > Automatically approve AI agent actions in VS Code. Zero config. No launch flags.
 
-[![Version](https://img.shields.io/badge/version-0.7.10-blue)](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/releases)
+[![Version](https://img.shields.io/badge/version-0.7.12-blue)](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.90%2B-blue)](https://code.visualstudio.com/)
 
@@ -12,7 +12,7 @@
 
 ⚡ **Zero Configuration** — Works out of the box. No launch flags, no setup required
 
-🛡️ **Safe by Default** — Blocked command list prevents dangerous operations (rm -rf, format, etc)
+🛡️ **Pre-Execution Gating & Script Inspection** — Multi-layer blocklist and script inspector intercept destructive commands and script contents before execution. Fail-closed architecture halts unverified terminal runs.
 
 🎛️ **Full Control** — Settings-based configuration for polling speed, button interception, custom commands
 
@@ -119,12 +119,22 @@ npm run package      # Create .vsix
 ```
 src/
 ├── extension.ts         # VS Code entry
-├── autoAcceptor.ts      # Start, stop, polling, events
-├── catalog.ts           # Command ids and settings to write
-├── blocked.ts           # Blocklist matcher
+├── autoAcceptor.ts      # Start, stop, polling, events, and fail-closed gates
+├── catalog.ts           # Command IDs and default blocked command lists
+├── blocked.ts           # Token normalizer and pattern matcher
+├── scriptInspector.ts   # Local script & package.json dependency inspector
 ├── settingsGuard.ts     # Snapshot and restore global settings
-├── cdpFallback.ts       # Optional webview clicks
+├── cdpFallback.ts       # Webview DOM inspection and safe button clicks
 └── diagnostics.ts       # Diagnostics
+
+## Security Architecture & Boundaries
+
+Auto Accept Antigravity employs a defense-in-depth model:
+- **Pre-Execution Gating**: Terminal auto-approval commands fail closed unless verified by CDP or explicitly opted into via `allowBlindTerminalAccept`.
+- **Flag Canonicalization**: Command strings are normalized (e.g., `rm -fr`, `/bin/rm -rf`, `git push origin --force`) to prevent evasion via flag splitting or path variations.
+- **Script Inspection**: Commands invoking shell scripts (`bash`, `sh`), Python, Node, or `npm run` tasks are inspected for nested destructive patterns prior to approval.
+- **Application-Scoped Settings**: Critical security controls are enforced at Application scope to prevent malicious workspace repositories from overriding blocklists.
+- **Not a Hardware Sandbox**: Dynamic runtime behavior (network downloads, obfuscated code, or precompiled binaries) cannot be statically verified; such workloads should be executed in disposable containers or sandbox environments.
 
 test/                    # Matcher tests and manual scripts
 docs/                    # Documentation

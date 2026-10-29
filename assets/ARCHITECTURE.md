@@ -196,7 +196,9 @@ Agent continues
    }
    ```
 
-## Performance Characteristics
+## Performance Characteristics (Observed Estimates)
+
+The following profile represents typical observations during standard active editing sessions on modern multi-core workstations (not formal benchmark certifications):
 
 ### CPU Usage
 - Idle polling: ~0.1%

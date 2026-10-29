@@ -1,7 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { settingsToInspect } from './catalog';
 
 /**
@@ -159,20 +156,18 @@ export async function runDiagnostics(outputChannel: vscode.OutputChannel): Promi
     log('---');
     log('Share this report to identify which commands/settings can be used.');
 
-    // Write report to a temp file and open it
+    // Open report in an untitled Markdown document to avoid shared temp file collisions
     try {
-        const reportPath = path.join(os.tmpdir(), 'autoaccept-diagnostics.md');
-        fs.writeFileSync(reportPath, lines.join('\n'), 'utf8');
-        const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(reportPath));
+        const doc = await vscode.workspace.openTextDocument({
+            content: lines.join('\n'),
+            language: 'markdown'
+        });
         await vscode.window.showTextDocument(doc, { preview: false });
-        outputChannel.appendLine(`Report saved to: ${reportPath}`);
-        console.log(`Report saved to: ${reportPath}`);
+        outputChannel.appendLine('Diagnostics report opened in editor.');
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        outputChannel.appendLine(`Could not open report file: ${msg}`);
-        console.log(`Could not open report file: ${msg}`);
+        outputChannel.appendLine(`Could not open report document: ${msg}`);
         outputChannel.appendLine('Full report is printed above in this output channel.');
-        console.log('Full report is printed above in this output channel.');
     }
 
     vscode.window.showInformationMessage('AutoAccept Diagnostics complete! Check Output Channel and report.');

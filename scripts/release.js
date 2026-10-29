@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const PKG_PATH = path.join(ROOT_DIR, 'package.json');
@@ -67,6 +67,24 @@ Examples:
     process.exit(0);
 }
 
+// Helper to execute commands safely with argument arrays
+function runCommand(command, cmdArgs, options = {}) {
+    console.log(`> ${command} ${cmdArgs.join(' ')}`);
+    const res = spawnSync(command, cmdArgs, {
+        cwd: ROOT_DIR,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+        ...options,
+    });
+    if (res.error) {
+        throw res.error;
+    }
+    if (res.status !== 0) {
+        throw new Error(`Command failed with exit code ${res.status}: ${command} ${cmdArgs.join(' ')}`);
+    }
+    return res;
+}
+
 // 1. Fetch live Open VSX details
 function fetchOpenVsxVersion() {
     return new Promise((resolve) => {
@@ -117,9 +135,17 @@ async function main() {
     console.log('🚀 Antigravity-AutoAccept Release Pipeline');
     console.log('─────────────────────────────────────────');
 
+    // Pre-flight check: Run compilation and test suite before touching any metadata
+    console.log('\n🧪 Running pre-flight test suite and compilation...');
+    const tscBin = path.join(ROOT_DIR, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
+    runCommand(tscBin, ['-p', './']);
+    runCommand(tscBin, ['-p', 'tsconfig.test.json']);
+    runCommand('node', ['--test', 'out-test/test/blocked.test.js', 'out-test/test/scriptInspector.test.js']);
+    console.log('✅ Pre-flight checks passed.');
+
     const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf-8'));
     let currentVersion = pkg.version;
-    console.log(`📌 Current local version: v${currentVersion}`);
+    console.log(`\n📌 Current local version: v${currentVersion}`);
 
     // Check Open VSX published version
     const remoteVersion = await fetchOpenVsxVersion();
@@ -170,7 +196,7 @@ async function main() {
             let changelog = fs.readFileSync(CHANGELOG_PATH, 'utf-8');
             if (!changelog.includes(`## [${nextVersion}]`)) {
                 const today = new Date().toISOString().split('T')[0];
-                const newEntry = `\n## [${nextVersion}] - ${today}\n\n### Changed\n- Maintenance and performance release\n- Bug fixes and stability improvements\n`;
+                const newEntry = `\n## [${nextVersion}] - ${today}\n\n### Changed\n- Security hardening and pre-execution gate improvements\n- Bug fixes and stability enhancements\n`;
                 changelog = changelog.replace('# Changelog\n', `# Changelog\n${newEntry}`);
                 fs.writeFileSync(CHANGELOG_PATH, changelog);
                 console.log(`✅ Added v${nextVersion} entry to CHANGELOG.md`);
@@ -180,9 +206,9 @@ async function main() {
         console.log(`ℹ️  Skipping version bump as requested (--no-bump)`);
     }
 
-    // 6. Compile project
-    console.log('\n🔨 Compiling TypeScript...');
-    execSync('npm run compile', { cwd: ROOT_DIR, stdio: 'inherit' });
+    // 6. Compile project with final version
+    console.log('\n🔨 Compiling production TypeScript...');
+    runCommand(tscBin, ['-p', './']);
     console.log('✅ Compilation successful.');
 
     // 7. Determine packaging variants
@@ -209,8 +235,7 @@ async function main() {
     console.log('\n📦 Packaging Extension Variants...');
     for (const p of packagesToBuild) {
         console.log(`\n🔹 Building ${p.name}: ${p.file}`);
-        const vsceCmd = `node "${VSCE_BIN}" package ${p.flags.join(' ')} -o "${p.file}"`;
-        execSync(vsceCmd, { cwd: ROOT_DIR, stdio: 'inherit' });
+        runCommand('node', [VSCE_BIN, 'package', ...p.flags, '-o', p.file]);
         const filePath = path.join(ROOT_DIR, p.file);
         const stats = fs.statSync(filePath);
         console.log(`✅ Created ${p.file} (${(stats.size / 1024).toFixed(2)} KB)`);
@@ -218,34 +243,48 @@ async function main() {
 
     // 9. Publishing if requested
     const publishTarget = getArgValue('--publish', null);
-    const token = getArgValue('--token', null) || process.env.OVSX_PAT || process.env.VSCE_PAT;
+    let publishHadErrors = false;
 
     if (publishTarget) {
         console.log('\n🚀 Publishing Variants...');
-        const primaryVsix = `auto-accept-antigravity-${nextVersion}.vsix`;
+        // Select the primary target vsix (default to universal, fallback to first built variant)
+        const primaryPkg = packagesToBuild.find(p => !p.flags.includes('--pre-release')) || packagesToBuild[0];
+        const primaryVsix = primaryPkg ? primaryPkg.file : `auto-accept-antigravity-${nextVersion}.vsix`;
 
         if (publishTarget === 'openvsx' || publishTarget === 'all') {
             console.log(`📤 Publishing ${primaryVsix} to Open VSX...`);
-            const ovsxToken = getArgValue('--token', null) || process.env.OVSX_PAT || process.env.OPENVSX_TOKEN;
-            const tokenFlag = ovsxToken ? `-p ${ovsxToken}` : '';
+            const ovsxToken = getArgValue('--token', null) || process.env.OPEN_VSX_TOKEN || process.env.OVSX_PAT || process.env.OPENVSX_TOKEN;
             try {
-                execSync(`npx -y ovsx publish "${primaryVsix}" ${tokenFlag}`, { cwd: ROOT_DIR, stdio: 'inherit' });
+                // Pass token via environment to avoid command-line exposure
+                const env = { ...process.env };
+                if (ovsxToken) env.OVSX_PAT = ovsxToken;
+                runCommand('npx', ['-y', 'ovsx', 'publish', primaryVsix], { env });
                 console.log('🎉 Successfully published to Open VSX!');
             } catch (err) {
-                console.error('❌ Open VSX publish failed. Ensure ovsx token is set via OVSX_PAT or --token=...');
+                console.error('❌ Open VSX publish failed:', err.message);
+                publishHadErrors = true;
             }
         }
 
         if (publishTarget === 'vscode' || publishTarget === 'all') {
             console.log(`📤 Publishing ${primaryVsix} to VS Code Marketplace...`);
             const vsceToken = getArgValue('--token', null) || process.env.VSCE_PAT;
-            const tokenFlag = vsceToken ? `-p ${vsceToken}` : '';
             try {
-                execSync(`node "${VSCE_BIN}" publish ${tokenFlag} --packagePath "${primaryVsix}"`, { cwd: ROOT_DIR, stdio: 'inherit' });
+                const vsceArgs = ['publish', '--packagePath', primaryVsix];
+                if (vsceToken) {
+                    vsceArgs.push('-p', vsceToken);
+                }
+                runCommand('node', [VSCE_BIN, ...vsceArgs]);
                 console.log('🎉 Successfully published to VS Code Marketplace!');
             } catch (err) {
-                console.error('❌ VS Code Marketplace publish failed. Ensure VSCE_PAT is set.');
+                console.error('❌ VS Code Marketplace publish failed:', err.message);
+                publishHadErrors = true;
             }
+        }
+
+        if (publishHadErrors) {
+            console.error('\n❌ One or more publishing targets failed.');
+            process.exit(1);
         }
     } else {
         console.log('\n💡 Tip: To automatically upload to Open VSX in one command, run:');
@@ -256,6 +295,6 @@ async function main() {
 }
 
 main().catch(err => {
-    console.error(`\n❌ Release pipeline failed:`, err);
+    console.error(`\n❌ Release pipeline failed:`, err.message || err);
     process.exit(1);
 });

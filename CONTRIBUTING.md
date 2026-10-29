@@ -143,10 +143,10 @@ examples/                # Config presets
 
 ## Release Process
 
-1. Bump version in `package.json`
-2. Update `CHANGELOG.md`
-3. Push to `main` branch
-4. GitHub Actions publishes to Marketplace automatically
+1. Use `npm run package` or `npm version patch/minor/major` (runs pre-flight test suites and compilation).
+2. Update `CHANGELOG.md` if documenting specific notable changes.
+3. Push commit and tag (`git push origin master --tags` with `v*` tag).
+4. GitHub Actions (`.github/workflows/publish-openvsx.yml`) verifies the tag, executes tests, and publishes the extension automatically to Open VSX.
 
 (Maintainers only)
 
