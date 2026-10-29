@@ -2,21 +2,21 @@
 
 Thanks for considering contributing! We welcome PRs, bug reports, and feature suggestions.
 
-## Ways to Contribute
+## Ways to contribute
 
-### 1. Report a Bug
+### 1. Report a bug
 Found a problem? [File an issue](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/issues):
 - Title: Short description
 - Description: Steps to reproduce, expected vs actual behavior
 - Environment: VS Code version, OS, Auto Accept version
 
-### 2. Suggest a Feature
+### 2. Suggest a feature
 Have an idea? [Open a discussion](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/discussions):
 - What problem does this solve?
 - Who benefits?
 - Rough implementation ideas
 
-### 3. Submit a Pull Request
+### 3. Submit a pull request
 
 #### Setup
 ```bash
@@ -32,29 +32,28 @@ npm run watch  # TypeScript compile in watch mode
 3. Test locally (see below)
 4. Commit with clear message: `git commit -m "feat: add thing"`
 
-#### Test Locally
+#### Test locally
 ```bash
 npm run compile    # Build TypeScript
 npm run package    # Create .vsix file
 # Install .vsix in VS Code manually (Extensions → ... → Install from VSIX)
 ```
 
-#### PR Guidelines
+#### PR guidelines
 - One feature per PR
 - Clear commit messages
 - Update tests if applicable
 - Update docs if it affects user-facing behavior
 - Link related issues
 
-### 4. Improve Documentation
+### 4. Improve documentation
 Docs live in `docs/` folder:
 - Typos? Submit a fix
 - Unclear explanation? Clarify it
 - Missing guide? Write one
 
----
 
-## Code Style
+## Code style
 
 ### TypeScript
 - Use `const` by default (not `let` or `var`)
@@ -103,7 +102,6 @@ try { await vscode.commands.executeCommand(cmd); }
 catch { }
 ```
 
----
 
 ## Testing
 
@@ -114,7 +112,7 @@ npm run compile    # Type-check and emit the extension
 
 Manual checks live in `test/manual/` and `docs/agent-test-suite.md`. Run diagnostics from the command palette when a VS Code update changes command ids.
 
-## Project Structure
+## Project structure
 
 ```
 src/
@@ -139,9 +137,8 @@ docs/
 examples/                # Config presets
 ```
 
----
 
-## Release Process
+## Release process
 
 1. Use `npm run package` or `npm version patch/minor/major` (runs pre-flight test suites and compilation).
 2. Update `CHANGELOG.md` if documenting specific notable changes.
@@ -150,7 +147,6 @@ examples/                # Config presets
 
 (Maintainers only)
 
----
 
 ## Communication
 
@@ -159,18 +155,16 @@ examples/                # Config presets
 - **Email:** support@autoaccept.dev
 - **PR reviews:** Respond within 48 hours
 
----
 
-## Code of Conduct
+## Code of conduct
 
 - Be respectful and inclusive
 - No harassment or discrimination
 - Assume good intent
 - We're all here to help
 
----
 
-## FAQ for Contributors
+## FAQ for contributors
 
 ### Q: I want to add another strategy. Is that good?
 **A:** Discuss it in an issue first. The current strategies already overlap, and a new one needs a place in the blocklist.
@@ -184,7 +178,6 @@ examples/                # Config presets
 ### Q: Can I add analytics or a paywall?
 **A:** No. The unused paywall was removed. Do not add one that trusts the webview for entitlements.
 
----
 
 ## Recognition
 
@@ -193,7 +186,6 @@ Contributors are recognized in:
 - `CONTRIBUTORS.md` (future)
 - Release notes
 
----
 
 **Questions?** Email support@autoaccept.dev or open an issue.
 

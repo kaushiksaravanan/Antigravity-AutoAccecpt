@@ -2,7 +2,7 @@
 
 All settings are optional. Auto Accept works out of the box with sensible defaults.
 
-## VS Code Settings
+## VS Code settings
 
 Open **Settings** (Cmd+, / Ctrl+,) and search for `autoAcceptAgent`.
 
@@ -23,10 +23,10 @@ Turn this off to disable the main auto-accept mechanism while keeping other feat
 Lower values = faster approvals but more CPU. Recommended range: 400-1200ms.
 
 **Examples:**
-- 200ms — Very aggressive (highest CPU impact)
-- 400ms — Fast response (low CPU)
-- 800ms — Balanced (default, recommended)
-- 1500ms — Relaxed polling
+- 200ms: very aggressive (highest CPU impact)
+- 400ms: fast response (low CPU)
+- 800ms: balanced (default, recommended)
+- 1500ms: relaxed polling
 
 ### `autoConfigureSettings`
 - **Type:** `boolean`
@@ -124,7 +124,7 @@ Useful for localized UIs or custom agent buttons.
 
 Auto Accept will click buttons with these labels in addition to the default ones.
 
-## Settings.json Example
+## Settings.json example
 
 Full minimal config. A short `blockedCommands` list replaces the default, it does not add to it. See [examples/basic.json](../examples/basic.json) for the default list.
 ```json
@@ -146,10 +146,10 @@ Full minimal config. A short `blockedCommands` list replaces the default, it doe
 ## Presets
 
 See [examples/](../examples/) for common configuration presets:
-- `basic.json` — Default config
-- `aggressive.json` — Fast polling and CDP
-- `relaxed.json` — Slow polling
-- `security-hardened.json` — Extra blocked commands
+- `basic.json`: default config
+- `aggressive.json`: fast polling and CDP
+- `relaxed.json`: slow polling
+- `security-hardened.json`: extra blocked commands
 
 ## Troubleshooting
 
@@ -165,7 +165,7 @@ Check if they're in `blockedCommands`, or add their text to `customButtonTexts`.
 ### CDP port conflicts
 Set `autoAcceptAgent.cdpPort` to a free port and launch the editor with the same `--remote-debugging-port`. Or leave CDP disabled.
 
-## Restoring Defaults
+## Restoring defaults
 
 Clear all Auto Accept settings to restore defaults:
 ```bash
@@ -178,10 +178,8 @@ Or reset individual settings:
 2. Search for `autoAcceptAgent`
 3. Click the gear icon → "Reset Setting"
 
-## Environment Variables
+## Environment variables
 
 No environment variables needed. All config is in VS Code settings.
-
----
 
 **Questions?** See [FAQ](faq.md) or file an issue on [GitHub](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/issues).

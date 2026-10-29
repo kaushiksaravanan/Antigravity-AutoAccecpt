@@ -8,33 +8,28 @@
 
 ## Features
 
-🚀 **Instant Auto-Accept** — Approve agent steps, terminal commands, and file edits automatically
+- **Instant auto-accept:** Approve agent steps, terminal commands, and file edits automatically.
+- **Zero configuration:** Works out of the box, no launch flags, no setup required.
+- **Pre-execution gating and script inspection:** A multi-layer blocklist and script inspector intercept destructive commands and script contents before execution. The fail-closed path halts unverified terminal runs.
+- **Full control:** Settings-based configuration for polling speed, button interception, and custom commands.
+- **CDP fallback:** Optional Chrome DevTools Protocol support for clicking buttons in webviews.
+- **Diagnostics:** Built-in checks of which VS Code commands are available.
 
-⚡ **Zero Configuration** — Works out of the box. No launch flags, no setup required
-
-🛡️ **Pre-Execution Gating & Script Inspection** — Multi-layer blocklist and script inspector intercept destructive commands and script contents before execution. Fail-closed architecture halts unverified terminal runs.
-
-🎛️ **Full Control** — Settings-based configuration for polling speed, button interception, custom commands
-
-🔌 **Chrome DevTools Protocol Fallback** — Optional CDP support for webview button clicks
-
-📊 **Diagnostics** — Built-in diagnostics to check VS Code command availability
-
-## Quick Start
+## Quick start
 
 1. Install from VS Code Marketplace: [Auto Accept Antigravity](https://marketplace.visualstudio.com/items?itemName=kaushiksaravanan.auto-accept-antigravity)
 2. Click the status bar icon (bottom right) to toggle on
-3. Start using Antigravity—approvals happen automatically
+3. Start using Antigravity; approvals happen automatically
 
 ## Usage
 
 ### Commands
 
-- `Auto Accept: Toggle` — Turn on or off from the status bar or Command Palette
-- `Auto Accept: Start` — Activate auto-accept
-- `Auto Accept: Stop` — Deactivate auto-accept
-- `Auto Accept: Accept All Now` — Fire pending approvals (`Cmd+Shift+Y` / `Ctrl+Shift+Y`)
-- `Auto Accept: Run Diagnostics` — Check available commands
+- `Auto Accept: Toggle`: turn on or off from the status bar or Command Palette
+- `Auto Accept: Start`: activate auto-accept
+- `Auto Accept: Stop`: deactivate auto-accept
+- `Auto Accept: Accept All Now` (`Cmd+Shift+Y` / `Ctrl+Shift+Y`): fire pending approvals
+- `Auto Accept: Run Diagnostics`: check available commands
 
 ### Configuration
 
@@ -69,14 +64,14 @@ Open VS Code Settings and search for `autoAcceptAgent`:
 
 See [docs/configuration.md](docs/configuration.md) for all options.
 
-## How It Works
+## How it works
 
 Four strategies work together:
 
-1. **Settings Injection** — Writes chat auto-approve settings, then restores them when stopped. Does not turn off workspace trust.
-2. **Command Polling** — Fires agent accept commands on a timer. It does not accept unrelated notification popups.
-3. **Event Tracking** — Closes a terminal that starts a blocked command, and reacts to editor changes.
-4. **CDP Fallback** — Optional. Clicks approval buttons in VS Code webviews after the blocklist check.
+1. **Settings injection** writes chat auto-approve settings, then restores them when stopped. It does not turn off workspace trust.
+2. **Command polling** fires agent accept commands on a timer. It does not accept unrelated notification popups.
+3. **Event tracking** closes a terminal that starts a blocked command and reacts to editor changes.
+4. **CDP fallback** (optional) clicks approval buttons in VS Code webviews after the blocklist check.
 
 [Read the full technical overview](docs/how-it-works.md)
 
@@ -114,7 +109,7 @@ npm run watch        # Watch mode
 npm run package      # Create .vsix
 ```
 
-### Project Structure
+### Project structure
 
 ```
 src/
@@ -127,15 +122,6 @@ src/
 ├── cdpFallback.ts       # Webview DOM inspection and safe button clicks
 └── diagnostics.ts       # Diagnostics
 
-## Security Architecture & Boundaries
-
-Auto Accept Antigravity employs a defense-in-depth model:
-- **Pre-Execution Gating**: Terminal auto-approval commands fail closed unless verified by CDP or explicitly opted into via `allowBlindTerminalAccept`.
-- **Flag Canonicalization**: Command strings are normalized (e.g., `rm -fr`, `/bin/rm -rf`, `git push origin --force`) to prevent evasion via flag splitting or path variations.
-- **Script Inspection**: Commands invoking shell scripts (`bash`, `sh`), Python, Node, or `npm run` tasks are inspected for nested destructive patterns prior to approval.
-- **Application-Scoped Settings**: Critical security controls are enforced at Application scope to prevent malicious workspace repositories from overriding blocklists.
-- **Not a Hardware Sandbox**: Dynamic runtime behavior (network downloads, obfuscated code, or precompiled binaries) cannot be statically verified; such workloads should be executed in disposable containers or sandbox environments.
-
 test/                    # Matcher tests and manual scripts
 docs/                    # Documentation
 examples/                # Config examples
@@ -143,14 +129,22 @@ examples/                # Config examples
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
 
+## Security boundaries
+
+The extension checks in layers:
+
+- **Pre-execution gating:** Terminal auto-approval commands fail closed unless verified by CDP or explicitly opted into via `allowBlindTerminalAccept`.
+- **Flag canonicalization:** Command strings are normalized (for example `rm -fr`, `/bin/rm -rf`, `git push origin --force`) so flag splitting and path variations cannot evade the blocklist.
+- **Script inspection:** Commands that invoke shell scripts (`bash`, `sh`), Python, or Node, and `npm run` tasks, are inspected for nested destructive patterns before approval.
+- **Application-scoped settings:** Critical security controls are enforced at Application scope so a malicious workspace repository cannot override blocklists.
+- **Not a hardware sandbox:** Dynamic runtime behavior (network downloads, obfuscated code, or precompiled binaries) cannot be verified statically; run such workloads in disposable containers or sandbox environments.
+
 ## License
 
-MIT — [LICENSE](LICENSE)
+MIT, see [LICENSE](LICENSE)
 
 ## Author
 
 [Kaushik Saravanan](https://github.com/kaushiksaravanan)
-
----
 
 **Status:** Actively maintained. Issues and PRs welcome.

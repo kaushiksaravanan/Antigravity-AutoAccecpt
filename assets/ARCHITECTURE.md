@@ -1,8 +1,8 @@
-# Architecture Overview
+# Architecture overview
 
-## High-Level Design
+## High-level design
 
-Auto Accept uses a multi-strategy approach for robust approval automation:
+Auto Accept uses four strategies for approval automation:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -31,7 +31,7 @@ Auto Accept uses a multi-strategy approach for robust approval automation:
           └─────────────┘        └─────────────┘
 ```
 
-## Component Breakdown
+## Component breakdown
 
 ### AutoAcceptor (`src/autoAcceptor.ts`)
 
@@ -46,7 +46,7 @@ Orchestrator:
 - **Command Registration:** Toggle, start, stop, accept now, diagnostics
 - **Disposal:** Restores settings on unload and keeps the on/off choice
 
-## Strategy Details
+## Strategy details
 
 ### Strategy 1: Settings Injection
 
@@ -113,7 +113,7 @@ buildPermissionScript() {
 }
 ```
 
-## State Machine
+## State machine
 
 ```
 ┌─────┐
@@ -148,9 +148,9 @@ buildPermissionScript() {
         On exit: dispose()
 ```
 
-## Data Flow
+## Data flow
 
-### Approval Event
+### Approval event
 
 ```
 Agent needs approval
@@ -169,9 +169,9 @@ Approval happens
 Agent continues
 ```
 
-## Concurrency & Safety
+## Concurrency and safety
 
-### Race Condition Prevention
+### Race condition prevention
 
 1. **Double Resolution**
    ```typescript
@@ -196,9 +196,9 @@ Agent continues
    }
    ```
 
-## Performance Characteristics (Observed Estimates)
+## Performance (rough estimates)
 
-The following profile represents typical observations during standard active editing sessions on modern multi-core workstations (not formal benchmark certifications):
+The numbers below are rough observations from a standard active editing session on a modern multi-core workstation, not formal benchmark results:
 
 ### CPU Usage
 - Idle polling: ~0.1%
@@ -215,13 +215,13 @@ The following profile represents typical observations during standard active edi
 - Events: 0-50ms (immediate)
 - CDP: 1500ms per cycle
 
-## Error Handling
+## Error handling
 
 All strategies include:
-1. **Try-catch blocks** → Log and continue
-2. **Guard checks** → Early exit on invalid state
-3. **Fallback behavior** → Don't crash on missing API
-4. **Logging** → Output channel for debugging
+1. Try-catch blocks that log and continue
+2. Guard checks that exit early on invalid state
+3. Fallback behavior so a missing API does not crash
+4. Logging to the output channel for debugging
 
 ```typescript
 try {
@@ -232,7 +232,7 @@ try {
 }
 ```
 
-## Testing Points
+## Testing points
 
 Key areas to test:
 - [x] Blocklist matcher (`npm test`)
@@ -245,7 +245,7 @@ Key areas to test:
 - [ ] Long-duration stability
 - [ ] Memory leak detection
 
-## Future Improvements
+## Future improvements
 
 - Configurable strategy ordering
 - Per-command approval rules
@@ -253,6 +253,5 @@ Key areas to test:
 - Custom strategy plugins
 - Performance profiling tools
 
----
 
 See [how-it-works.md](../docs/how-it-works.md) for user-facing technical details.

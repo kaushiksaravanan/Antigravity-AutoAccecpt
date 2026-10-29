@@ -1,6 +1,6 @@
 # Frequently Asked Questions
 
-## Installation & Activation
+## Installation and activation
 
 ### Q: How do I install Auto Accept?
 **A:** Search for "Auto Accept Antigravity" in VS Code Extensions, click Install. That's it.
@@ -11,9 +11,8 @@
 ### Q: How do I turn it on/off?
 **A:** Click the status bar icon (bottom right). `Cmd+Shift+Y` / `Ctrl+Shift+Y` runs Accept All Now, not the toggle.
 
----
 
-## Safety & Security
+## Safety and security
 
 ### Q: Is this safe?
 **A:** Auto Accept Antigravity operates with a fail-closed pre-execution boundary:
@@ -36,7 +35,6 @@
 
 We do NOT see your code, commands, or personal info.
 
----
 
 ## Performance
  
@@ -55,7 +53,6 @@ We do NOT see your code, commands, or personal info.
 ### Q: What's the memory impact?
 **A:** Typically ~15-25 MB memory footprint.
 
----
 
 ## Configuration
 
@@ -72,11 +69,10 @@ Optional: Tweak `pollIntervalMs` or `blockedCommands` in settings.
 3. These override global settings for that workspace only
 
 ### Q: How do I restore default settings?
-**A:** Open Settings, search `autoAcceptAgent`, click gear icon → "Reset Setting".
+**A:** Open Settings, search `autoAcceptAgent`, click the gear icon, then "Reset Setting".
 
----
 
-## Features & Compatibility
+## Features and compatibility
 
 ### Q: Works with Antigravity?
 **A:** Yes. Designed specifically for Antigravity (Cursor, Claude Code, etc).
@@ -93,9 +89,8 @@ Optional: Tweak `pollIntervalMs` or `blockedCommands` in settings.
 ### Q: Which VS Code versions are supported?
 **A:** VS Code 1.90.0+. Older versions may have limited features.
 
----
 
-## Approvals & Commands
+## Approvals and commands
 
 ### Q: Why didn't my command get approved?
 **A:** Possible reasons:
@@ -118,9 +113,8 @@ Check status bar (should say "ON") and run diagnostics: `Auto Accept: Run Diagno
 ### Q: Can I unblock a command temporarily?
 **A:** Yes. Edit `blockedCommands` in settings, then toggle Auto Accept off/on.
 
----
 
-## Terminal Commands
+## Terminal commands
 
 ### Q: Does this approve terminal commands?
 **A:** Yes. When a terminal command needs approval, Auto Accept handles it.
@@ -131,9 +125,8 @@ Check status bar (should say "ON") and run diagnostics: `Auto Accept: Run Diagno
 ### Q: What about shell history?
 **A:** Auto Accept doesn't access shell history. Only approves UI prompts.
 
----
 
-## File Edits
+## File edits
 
 ### Q: Does this apply file edits automatically?
 **A:** Yes. When an agent suggests file changes, Auto Accept approves them.
@@ -144,7 +137,6 @@ Check status bar (should say "ON") and run diagnostics: `Auto Accept: Run Diagno
 ### Q: Does this handle merge conflicts?
 **A:** No. You still need to resolve conflicts manually.
 
----
 
 ## Notifications
 
@@ -153,9 +145,8 @@ Check status bar (should say "ON") and run diagnostics: `Auto Accept: Run Diagno
 
 `autoAcceptAgent.interceptNotifications` only lets the optional CDP fallback click Allow buttons inside the agent UI.
 
----
 
-## Settings Management
+## Settings management
 
 ### Q: What settings does Auto Accept modify?
 **A:** When toggled on, it sets chat auto-approve settings, terminal auto-approve, `chat.agent.maxRequests`, `terminal.integrated.confirmOnKill`, and `terminal.integrated.confirmOnPaste`.
@@ -175,7 +166,6 @@ To make permanent changes:
 2. Make your changes
 3. Toggle Auto Accept back ON (new values will be saved as "original")
 
----
 
 ## Diagnostics
 
@@ -190,9 +180,8 @@ Helps troubleshoot why approvals might not be working.
 ### Q: How often should I run diagnostics?
 **A:** Only if something seems broken. Check the output channel for real-time info.
 
----
 
-## Updates & Versions
+## Updates and versions
 
 ### Q: How often is this updated?
 **A:** Monthly updates with bug fixes and features.
@@ -209,7 +198,6 @@ Check GitHub releases for changelog.
 - Steps to reproduce
 - Expected vs actual behavior
 
----
 
 ## Troubleshooting
 
@@ -239,9 +227,8 @@ Check GitHub releases for changelog.
 ### Q: Can I uninstall and reinstall to fix issues?
 **A:** Yes, it's safe. All settings are preserved.
 
----
 
-## Advanced Usage
+## Advanced usage
 
 ### Q: Can I use Auto Accept programmatically?
 **A:** Yes. All commands are registered and callable via command palette or API.
@@ -252,9 +239,8 @@ Check GitHub releases for changelog.
 ### Q: Can I fork and customize it?
 **A:** Yes. MIT license allows this.
 
----
 
-## Contact & Support
+## Contact and support
 
 **Have a question not listed here?**
 
@@ -264,6 +250,5 @@ Check GitHub releases for changelog.
 
 We respond within 24 hours.
 
----
 
 **Last updated:** 2026-09-30
