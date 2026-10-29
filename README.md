@@ -2,7 +2,7 @@
 
 > Automatically approve AI agent actions in VS Code. Zero config. No launch flags.
 
-[![Version](https://img.shields.io/badge/version-0.7.16-blue)](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/releases)
+[![Version](https://img.shields.io/badge/version-0.7.17-blue)](https://github.com/kaushiksaravanan/Antigravity-AutoAccecpt/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-1.90%2B-blue)](https://code.visualstudio.com/)
 
@@ -11,6 +11,7 @@
 - **Instant auto-accept:** Approve agent steps, terminal commands, and file edits automatically.
 - **Zero configuration:** Works out of the box, no launch flags, no setup required.
 - **Pre-execution gating and script inspection:** A multi-layer blocklist and script inspector intercept destructive commands and script contents before execution. The fail-closed path halts unverified terminal runs.
+- **Interactive security popout & feedback:** When a dangerous or malicious command is detected and blocked, auto-accept immediately pauses execution and displays a modal alert with full details (command, matched pattern, triggering agent, timestamp). Users can choose to **Accept Risk & Continue**, submit false-alarm feedback directly to Open VSX (**Wrong**), or dismiss cleanly (**Correct**).
 - **Full control:** Settings-based configuration for polling speed, button interception, and custom commands.
 - **CDP fallback:** Optional Chrome DevTools Protocol support for clicking buttons in webviews.
 - **Diagnostics:** Built-in checks of which VS Code commands are available.

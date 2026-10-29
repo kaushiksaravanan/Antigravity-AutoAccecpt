@@ -4,6 +4,7 @@ import { inspectCommand } from './scriptInspector';
 import {
     DEFAULT_BLOCKED_COMMANDS,
     ENABLED_STATE_KEY,
+    OPEN_VSX_URL,
     TERMINAL_BLOCK_PAUSE_MS,
     acceptNowCommands,
     criticalAcceptCommands,
@@ -13,7 +14,7 @@ import {
     secondaryAcceptCommands,
     terminalAutoApproveSettings,
 } from './catalog';
-import { CdpFallback } from './cdpFallback';
+import { BlockedCommandInfo, CdpFallback } from './cdpFallback';
 import { SettingsGuard } from './settingsGuard';
 
 export interface StartOptions {
@@ -67,6 +68,9 @@ export class AutoAcceptor implements vscode.Disposable {
             interceptLooseButtons: () => this.interceptLooseButtons(),
             workspaceRoots: () => this.workspaceFolders(),
             unknownScriptPolicy: () => vscode.workspace.getConfiguration('autoAcceptAgent').get<'warn' | 'block'>('unknownScriptPolicy', 'warn'),
+            onBlocked: (info) => {
+                void this.handleBlockedCommand(info);
+            },
         });
 
         this.lifetimeDisposables.push(vscode.workspace.onDidChangeConfiguration(async (event) => {
@@ -402,6 +406,14 @@ export class AutoAcceptor implements vscode.Disposable {
                 } catch {
                     // Closing the terminal is best-effort.
                 }
+
+                const agentName = event.terminal.name ? `Terminal (${event.terminal.name})` : 'Antigravity Terminal Agent';
+                void this.handleBlockedCommand({
+                    command: commandLine,
+                    pattern: blocked,
+                    agent: agentName,
+                    timestamp: new Date().toLocaleTimeString(),
+                });
             }));
         }
 
@@ -468,7 +480,49 @@ export class AutoAcceptor implements vscode.Disposable {
         this.terminalAcceptPausedUntil = Date.now() + TERMINAL_BLOCK_PAUSE_MS;
         const message = `AutoAccept-Antigravity: Attempted interruption of blocked command "${pattern}" and closed that terminal. Terminal auto-accept is paused for 60 seconds.`;
         this.log(message);
-        void vscode.window.showWarningMessage(message);
+    }
+
+    async handleBlockedCommand(info: BlockedCommandInfo): Promise<void> {
+        this.pauseTerminalAccept(info.pattern);
+
+        const shortCmd = info.command.length > 60 ? info.command.slice(0, 57) + '...' : info.command;
+        const title = `⚠️ Dangerous Command Blocked: ${shortCmd}`;
+        const detail = [
+            `A potentially destructive or malicious command was blocked and stopped.`,
+            ``,
+            `• Command: ${info.command}`,
+            `• Blocked Pattern: ${info.pattern}`,
+            `• Triggered by: ${info.agent}`,
+            `• Timestamp: ${info.timestamp}`,
+            ``,
+            `Terminal auto-accept has been paused to protect your workspace.`,
+            `• If this was blocked by mistake: Click "Wrong" to report an issue or give feedback on Open VSX.`,
+            `• If this was correctly blocked: Click "Correct" to dismiss.`,
+            `• To override: Click "Accept Risk & Continue" to unpause and resume auto-acceptance.`,
+        ].join('\n');
+
+        const optAccept = 'Accept Risk & Continue';
+        const optFeedback = 'Wrong (Give Feedback on Open VSX)';
+        const optCorrect = 'Correct (Dismiss)';
+
+        const choice = await vscode.window.showWarningMessage(
+            title,
+            { modal: true, detail },
+            optAccept,
+            optFeedback,
+            optCorrect,
+        );
+
+        if (choice === optAccept) {
+            this.terminalAcceptPausedUntil = 0;
+            this.log(`User accepted risk for: ${sanitizeCommandLine(info.command)}. Resumed terminal auto-accept.`);
+            void vscode.window.showInformationMessage('AutoAccept: Risk accepted. Terminal auto-accept resumed.');
+        } else if (choice === optFeedback) {
+            this.log(`User selected feedback on Open VSX for: ${sanitizeCommandLine(info.command)}.`);
+            void vscode.env.openExternal(vscode.Uri.parse(OPEN_VSX_URL));
+        } else {
+            this.log(`Blocked command alert dismissed for: ${sanitizeCommandLine(info.command)}.`);
+        }
     }
 
     private isTerminalPaused(): boolean {

@@ -7,6 +7,9 @@ export const SETTINGS_SNAPSHOT_KEY = 'autoAcceptAgent.settingsSnapshot';
 /** How long terminal auto-accept stays paused after a blocked command starts. */
 export const TERMINAL_BLOCK_PAUSE_MS = 60_000;
 
+/** URL to the Open VSX extension page for issue reporting and feedback. */
+export const OPEN_VSX_URL = 'https://open-vsx.org/extension/kaushiksaravanan/auto-accept-antigravity';
+
 /**
  * Agent-step commands fired on the fast poll.
  * Notification commands are intentionally absent: they accept whatever

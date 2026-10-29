@@ -50,7 +50,7 @@ The fallback connects to that one localhost port, attaches only to `vscode-webvi
 
 `autoAcceptAgent.interceptNotifications` controls whether CDP may also click Allow buttons in the agent UI. It does not accept unrelated VS Code notifications.
 
-## Blocked commands
+## Blocked commands & Security Popout
 
 A single word matches the command name only:
 
@@ -63,9 +63,20 @@ Several words match that token sequence:
 - `rm -rf /tmp` matches `rm -rf`
 - `git push --force-with-lease` does not match `git push --force`
 
-Wrappers such as `sudo`, `cmd /c`, and `powershell -Command` are unwrapped before the check.
+Wrappers such as `sudo`, `cmd /c`, and `powershell -Command` are unwrapped before the check. Compound commands (`&&`, `||`, `;`, `&`, `|`), inline scripts (`python -c`, `bash -c`, `node -e`), and nested script dependencies are thoroughly inspected.
 
-If a blocked command has already started, the extension sends Ctrl+C and closes that terminal. Shell integration has to be enabled for this event to fire. CDP can refuse the click earlier, when it can see the text.
+When a blocked command is caught (either before execution via CDP or upon terminal trigger):
+1. Terminal auto-accept is immediately paused.
+2. If running in a terminal, the extension attempts interruption and closes that terminal.
+3. An interactive popout modal is presented with full audit details:
+   - The blocked command
+   - Matched pattern
+   - Triggering agent / terminal
+   - Exact timestamp
+4. The user is offered 3 actionable choices:
+   - **Accept Risk & Continue**: Immediately resets the pause and resumes auto-acceptance.
+   - **Wrong (Give Feedback on Open VSX)**: Opens the extension page on Open VSX so users can report false positives or discuss blocked patterns.
+   - **Correct (Dismiss)**: Closes the dialog cleanly while keeping auto-accept paused to protect the workspace.
 
 ## Lifecycle
 

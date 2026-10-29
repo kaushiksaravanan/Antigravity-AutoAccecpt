@@ -3,6 +3,13 @@ import WebSocket = require('ws');
 import { FIND_BLOCKED_SOURCE, findBlockedPattern } from './blocked';
 import { inspectCommand } from './scriptInspector';
 
+export interface BlockedCommandInfo {
+    command: string;
+    pattern: string;
+    agent: string;
+    timestamp: string;
+}
+
 export interface CdpHost {
     isActive(): boolean;
     enabled(): boolean;
@@ -13,6 +20,7 @@ export interface CdpHost {
     interceptLooseButtons(): boolean;
     workspaceRoots(): readonly string[];
     unknownScriptPolicy(): 'warn' | 'block';
+    onBlocked?(info: BlockedCommandInfo): void;
 }
 
 export interface CdpTargetInfo {
@@ -284,6 +292,7 @@ export class CdpFallback {
                             };
                             if (candidate.status === 'candidate' && candidate.targetId && candidate.buttonText) {
                                 let blockedReason: string | null = null;
+                                let blockedCmd: string | null = null;
                                 const roots = this.host.workspaceRoots();
                                 const blockedList = this.host.blockedCommands();
                                 const policy = this.host.unknownScriptPolicy();
@@ -292,6 +301,7 @@ export class CdpFallback {
                                     const directBlocked = findBlockedPattern(cmd, blockedList);
                                     if (directBlocked) {
                                         blockedReason = directBlocked;
+                                        blockedCmd = cmd;
                                         break;
                                     }
                                     const scriptBlocked = inspectCommand(
@@ -303,6 +313,7 @@ export class CdpFallback {
                                     );
                                     if (scriptBlocked) {
                                         blockedReason = `script inspector: ${scriptBlocked}`;
+                                        blockedCmd = cmd;
                                         break;
                                     }
                                 }
@@ -315,6 +326,12 @@ export class CdpFallback {
                                         })()`,
                                     }, sessionId).catch(() => undefined);
                                     this.host.log(`CDP refused a button: ${blockedReason}`);
+                                    this.host.onBlocked?.({
+                                        command: blockedCmd || candidate.buttonText,
+                                        pattern: blockedReason,
+                                        agent: 'Antigravity Agent UI',
+                                        timestamp: new Date().toLocaleTimeString(),
+                                    });
                                 } else {
                                     const clickMsg = await send('Runtime.evaluate', {
                                         expression: `(function() {
@@ -345,6 +362,12 @@ export class CdpFallback {
                         this.host.log(`CDP ${target.targetId.slice(0, 6)} -> ${result}`);
                     } else if (result.startsWith('blocked:')) {
                         this.host.log(`CDP refused a button: ${result}`);
+                        this.host.onBlocked?.({
+                            command: 'UI Container Command',
+                            pattern: result.replace(/^blocked:/, ''),
+                            agent: 'Antigravity Agent UI',
+                            timestamp: new Date().toLocaleTimeString(),
+                        });
                     }
                 }
             } catch {
