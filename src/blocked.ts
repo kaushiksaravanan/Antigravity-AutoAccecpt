@@ -21,16 +21,24 @@ function splitCommandSegments(text) {
     var segments = [];
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
-        var subs = extractSubshells(line);
-        for (var s = 0; s < subs.length; s++) {
-            var subParts = splitOperators(subs[s]);
-            for (var sp = 0; sp < subParts.length; sp++) {
-                if (subParts[sp].trim()) segments.push(subParts[sp]);
+        var queue = [line];
+        var seen = [];
+        while (queue.length > 0) {
+            var curr = queue.shift();
+            if (!curr || seen.indexOf(curr) !== -1) continue;
+            seen.push(curr);
+            var subs = extractSubshells(curr);
+            for (var s = 0; s < subs.length; s++) {
+                queue.push(subs[s]);
+                var subParts = splitOperators(subs[s]);
+                for (var sp = 0; sp < subParts.length; sp++) {
+                    if (subParts[sp].trim()) segments.push(subParts[sp]);
+                }
             }
-        }
-        var parts = splitOperators(line);
-        for (var j = 0; j < parts.length; j++) {
-            if (parts[j].trim()) segments.push(parts[j]);
+            var parts = splitOperators(curr);
+            for (var j = 0; j < parts.length; j++) {
+                if (parts[j].trim()) segments.push(parts[j]);
+            }
         }
     }
     return segments;
@@ -174,7 +182,24 @@ function unwrap(tokens, depth) {
     if (!tokens.length || depth > 6) return tokens;
     var head = tokens[0].toLowerCase();
     if (head === '&' || head === '.' || head === '>' || head === '$' || head === '#' || head === '%') return unwrap(tokens.slice(1), depth + 1);
-    if (head === 'sudo' || head === 'env' || head === 'command' || head === 'time' || head === 'nice' || head === 'nohup' || head === 'eval') {
+    if (head === 'sudo') {
+        var s = 1;
+        while (s < tokens.length) {
+            var tok = tokens[s];
+            if (tok === '-u' || tok === '-g' || tok === '-h' || tok === '-p') {
+                s += 2;
+                continue;
+            }
+            if (tok.indexOf('-') === 0) {
+                s += 1;
+                continue;
+            }
+            break;
+        }
+        if (s < tokens.length) return unwrap(tokens.slice(s), depth + 1);
+        return unwrap(tokens.slice(1), depth + 1);
+    }
+    if (head === 'env' || head === 'command' || head === 'time' || head === 'nice' || head === 'nohup' || head === 'eval') {
         return unwrap(tokens.slice(1), depth + 1);
     }
     if (head === 'xargs') {
@@ -325,7 +350,11 @@ function patternTokens(pattern) {
 function matchSegment(segment, patterns, depth) {
     if (depth > 8) return '';
     var tokens = unwrap(tokenize(segment), 0);
-    if (tokens.length === 1 && /\s/.test(tokens[0])) return matchSegment(tokens[0], patterns, depth + 1);
+    if (tokens.length === 1 && /\s/.test(tokens[0])) {
+        var hitNested = findBlockedPattern(tokens[0], patterns);
+        if (hitNested) return hitNested;
+        return matchSegment(tokens[0], patterns, depth + 1);
+    }
     if (!tokens.length) return '';
     var head = commandName(tokens[0]);
     if (head === 'echo' || head === 'printf' || head === 'write-output' || head === 'print') {

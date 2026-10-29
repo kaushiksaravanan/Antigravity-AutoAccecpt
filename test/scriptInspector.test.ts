@@ -241,6 +241,83 @@ test('scriptInspector: detects blocked patterns inside npm run scripts in packag
     }
 });
 
+test('scriptInspector: inspects compound commands joined by &&, ||, ;, and |', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const scriptPath = path.join(tmpDir, 'cleanup.sh');
+        fs.writeFileSync(scriptPath, '#!/bin/bash\nrm -rf /tmp/target\n');
+
+        assert.equal(inspectCommand('echo ok && bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+        assert.equal(inspectCommand('false || bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+        assert.equal(inspectCommand('echo done; bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+        assert.equal(inspectCommand('cat safe.txt | bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+        assert.equal(inspectCommand('echo ok && echo safe', [tmpDir], blocked, noopLog), null);
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: inspects python -m <module> invocation', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const cleanupPy = path.join(tmpDir, 'cleanup.py');
+        fs.writeFileSync(cleanupPy, 'import shutil\nshutil.rmtree("./fixture")\n');
+
+        assert.equal(inspectCommand('python -m cleanup', [tmpDir], blocked, noopLog), 'shutil.rmtree');
+        assert.equal(inspectCommand('python3 -m cleanup', [tmpDir], blocked, noopLog), 'shutil.rmtree');
+
+        // Package with __main__.py
+        const pkgDir = path.join(tmpDir, 'mypkg');
+        fs.mkdirSync(pkgDir);
+        fs.writeFileSync(path.join(pkgDir, '__main__.py'), 'import shutil\nshutil.rmtree("./data")\n');
+
+        assert.equal(inspectCommand('python -m mypkg', [tmpDir], blocked, noopLog), 'shutil.rmtree');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: inspects inline code execution via -c and -e', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        assert.equal(
+            inspectCommand('python -c "import shutil; shutil.rmtree(\'./fixture\')"', [tmpDir], blocked, noopLog),
+            'shutil.rmtree',
+        );
+        assert.equal(
+            inspectCommand('python3 -c "from shutil import rmtree; rmtree(\'./fixture\')"', [tmpDir], blocked, noopLog),
+            'shutil.rmtree',
+        );
+        assert.equal(
+            inspectCommand('node -e "const fs = require(\'fs\'); fs.rmSync(\'./fixture\', {recursive:true})"', [tmpDir], blocked, noopLog),
+            'fs.rmSync',
+        );
+        assert.equal(
+            inspectCommand('bash -c "rm -rf ./fixture"', [tmpDir], blocked, noopLog),
+            'rm -rf',
+        );
+        assert.equal(
+            inspectCommand('python -c "print(\'hello safe world\')"', [tmpDir], blocked, noopLog),
+            null,
+        );
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('scriptInspector: unwraps sudo with flags like -u root', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
+    try {
+        const scriptPath = path.join(tmpDir, 'cleanup.sh');
+        fs.writeFileSync(scriptPath, '#!/bin/bash\nrm -rf /tmp/target\n');
+
+        assert.equal(inspectCommand('sudo -u root bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+        assert.equal(inspectCommand('sudo -u root -g admin env FOO=1 bash cleanup.sh', [tmpDir], blocked, noopLog), 'rm -rf');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
 test('scriptInspector: allows safe commands and non-script commands', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-test-'));
     try {

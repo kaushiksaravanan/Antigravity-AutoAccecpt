@@ -69,9 +69,21 @@ export class AutoAcceptor implements vscode.Disposable {
             unknownScriptPolicy: () => vscode.workspace.getConfiguration('autoAcceptAgent').get<'warn' | 'block'>('unknownScriptPolicy', 'warn'),
         });
 
-        this.lifetimeDisposables.push(vscode.workspace.onDidChangeConfiguration((event) => {
+        this.lifetimeDisposables.push(vscode.workspace.onDidChangeConfiguration(async (event) => {
             if (this.isDisposed || !this.isRunning || !event.affectsConfiguration('autoAcceptAgent')) {
                 return;
+            }
+            if (event.affectsConfiguration('autoAcceptAgent.autoConfigureSettings') ||
+                event.affectsConfiguration('autoAcceptAgent.allowBlindTerminalAccept')) {
+                if (!this.autoConfigureSettings()) {
+                    await this.settings.restore();
+                } else {
+                    const safeForTerminal = this.allowBlindTerminalAccept();
+                    const settingsToApply = safeForTerminal
+                        ? [...editAutoApproveSettings, ...terminalAutoApproveSettings]
+                        : [...editAutoApproveSettings];
+                    await this.settings.apply(settingsToApply);
+                }
             }
             this.startCommandPolling();
             this.cdp.start();
@@ -125,6 +137,18 @@ export class AutoAcceptor implements vscode.Disposable {
 
             this.isRunning = true;
             await this.context.globalState.update(ENABLED_STATE_KEY, true);
+
+            if (this.isDisposed || !this.isRunning || generation !== this.startGeneration) {
+                this.isRunning = false;
+                this.stopCommandPolling();
+                this.clearPendingTimers();
+                this.cdp.stop();
+                this.disposeTracking();
+                await this.settings.restore().catch(() => undefined);
+                this.updateStatusBar('off');
+                return;
+            }
+
             this.startCommandPolling();
             this.setupEventTracking();
             this.cdp.start();

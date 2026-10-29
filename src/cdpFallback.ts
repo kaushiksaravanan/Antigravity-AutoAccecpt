@@ -506,7 +506,10 @@ var CAN_EXPAND = ${canExpand ? 'true' : 'false'};
 
             // Extract candidate commands for pre-approval script inspection
             var candidates = [];
-            var codeEls = (container || document.body).querySelectorAll('pre, code, .terminal-command, .monaco-editor, [class*="code"], [class*="command"]');
+            var targetEl = container || document.body;
+            var codeEls = (targetEl && typeof targetEl.querySelectorAll === 'function')
+                ? targetEl.querySelectorAll('pre, code, .terminal-command, .monaco-editor, [class*="code"], [class*="command"]')
+                : [];
             for (var c = 0; c < codeEls.length; c++) {
                 var codeText = (codeEls[c].innerText || codeEls[c].textContent || '').trim();
                 if (codeText && codeText.length < 2048 && candidates.indexOf(codeText) === -1) {

@@ -14,6 +14,7 @@ interface PersistedSetting {
  * can still be repaired on the next launch.
  */
 export class SettingsGuard {
+    private static readonly activeOwners = new Set<SettingsGuard>();
     private applied = false;
 
     constructor(
@@ -22,6 +23,10 @@ export class SettingsGuard {
     ) {}
 
     async recover(): Promise<void> {
+        if (SettingsGuard.activeOwners.size > 0) {
+            this.log('Settings guard: active owner is running, skipping recovery.');
+            return;
+        }
         const leftover = this.read();
         if (leftover.length === 0) {
             return;
@@ -75,6 +80,7 @@ export class SettingsGuard {
         }
 
         this.applied = true;
+        SettingsGuard.activeOwners.add(this);
         this.log(`Settings applied: ${applied} updated, ${skipped} already set or unavailable.`);
     }
 
@@ -86,6 +92,7 @@ export class SettingsGuard {
         this.log('Restoring previous settings.');
         const result = await this.restoreEntries(entries);
         this.applied = false;
+        SettingsGuard.activeOwners.delete(this);
         return result;
     }
 
