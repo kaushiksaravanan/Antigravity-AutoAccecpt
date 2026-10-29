@@ -2,7 +2,7 @@
   "name": "auto-accept-antigravity",
   "displayName": "Antigravity-AutoAccept",
   "description": "Automatically accept AI agent actions (file edits, terminal commands) in VS Code, zero config, no launch flags needed",
-  "version": "0.7.13",
+  "version": "0.7.14",
   "icon": "icon.png",
   "publisher": "kaushiksaravanan",
   "author": "Kaushik Saravanan",
@@ -115,7 +115,10 @@
         },
         "autoAcceptAgent.unknownScriptPolicy": {
           "type": "string",
-          "enum": ["warn", "block"],
+          "enum": [
+            "warn",
+            "block"
+          ],
           "default": "warn",
           "description": "Policy when a terminal command invokes a script file that cannot be resolved in the workspace or exceeds size limits. 'warn' logs an advisory; 'block' withholds approval."
         },
