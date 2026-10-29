@@ -49,20 +49,37 @@ export function isRunAcceptCommand(command: string): boolean {
 }
 
 /**
- * Global settings written while Auto Accept is on, then restored on stop.
- * Workspace trust is not in this list. Turning trust off is not an approval preference.
+ * Settings that auto-approve file edits and agent steps.
+ * These are always safe to apply — they do not execute arbitrary commands.
  */
-export const autoApproveSettings: ReadonlyArray<readonly [string, string, unknown]> = [
+export const editAutoApproveSettings: ReadonlyArray<readonly [string, string, unknown]> = [
     ['chat.tools', 'autoApprove', true],
     ['chat.tools.global', 'autoApprove', true],
-    ['chat.tools.terminal', 'enableAutoApprove', true],
-    ['chat.tools.terminal', 'autoApprove', true],
     ['chat.agent', 'autoApprove', true],
     ['chat.agent', 'maxRequests', 999],
+];
+
+/**
+ * Settings that auto-approve terminal and command execution.
+ * Only safe when CDP can inspect the command text, or when the user
+ * explicitly accepts the risk of blind terminal acceptance.
+ */
+export const terminalAutoApproveSettings: ReadonlyArray<readonly [string, string, unknown]> = [
+    ['chat.tools.terminal', 'enableAutoApprove', true],
+    ['chat.tools.terminal', 'autoApprove', true],
     ['chat.tools.run_command', 'autoApprove', true],
     ['chat.tools.default_api:run_command', 'autoApprove', true],
     ['terminal.integrated', 'confirmOnKill', 'never'],
     ['terminal.integrated', 'confirmOnPaste', false],
+];
+
+/**
+ * Combined list. Used for settings inspection, snapshot, and restore.
+ * Workspace trust is not in this list. Turning trust off is not an approval preference.
+ */
+export const autoApproveSettings: ReadonlyArray<readonly [string, string, unknown]> = [
+    ...editAutoApproveSettings,
+    ...terminalAutoApproveSettings,
 ];
 
 /** Settings diagnostics should report, including keys this extension does not write. */
@@ -81,6 +98,7 @@ export const settingsToInspect: ReadonlyArray<readonly [string, string]> = [
 export const DEFAULT_BLOCKED_COMMANDS: readonly string[] = [
     'rm -rf /',
     'rm -rf',
+    'rm -r',
     'format',
     'mkfs',
     'del',
@@ -92,4 +110,6 @@ export const DEFAULT_BLOCKED_COMMANDS: readonly string[] = [
     'git push --force',
     'git reset --hard',
     'git clean -fd',
+    'git clean -f',
+    'shred',
 ];

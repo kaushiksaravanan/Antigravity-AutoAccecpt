@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AutoAcceptor } from './autoAcceptor';
-import { ENABLED_STATE_KEY, acceptNowCommands } from './catalog';
+import { ENABLED_STATE_KEY } from './catalog';
 import { runDiagnostics } from './diagnostics';
 
 let acceptor: AutoAcceptor | undefined;
@@ -30,7 +30,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             cmd('autoAcceptAgent.start', () => acceptor!.start()),
             cmd('autoAcceptAgent.stop', () => acceptor!.stop()),
             cmd('autoAcceptAgent.diagnostics', () => runDiagnostics(output)),
-            cmd('autoAcceptAgent.acceptNow', () => acceptNow()),
+            cmd('autoAcceptAgent.acceptNow', () => acceptor ? acceptor.acceptNow() : Promise.resolve()),
             acceptor,
         );
 
@@ -52,12 +52,3 @@ export async function deactivate(): Promise<void> {
     acceptor = undefined;
 }
 
-async function acceptNow(): Promise<void> {
-    for (const command of acceptNowCommands) {
-        try {
-            await vscode.commands.executeCommand(command);
-        } catch {
-            // Nothing is waiting for this command.
-        }
-    }
-}

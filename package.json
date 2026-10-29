@@ -107,6 +107,11 @@
           "default": [],
           "description": "Additional button text labels to auto-click in the agent UI (for custom/localized prompts)."
         },
+        "autoAcceptAgent.allowBlindTerminalAccept": {
+          "type": "boolean",
+          "default": false,
+          "description": "DANGEROUS: Auto-approve terminal execution even when CDP is disabled and command text cannot be inspected. When false (default), terminal commands require manual approval unless CDP is connected."
+        },
         "autoAcceptAgent.blockedCommands": {
           "type": "array",
           "items": {
@@ -115,6 +120,7 @@
           "default": [
             "rm -rf /",
             "rm -rf",
+            "rm -r",
             "format",
             "mkfs",
             "del",
@@ -125,7 +131,9 @@
             "Remove-Item",
             "git push --force",
             "git reset --hard",
-            "git clean -fd"
+            "git clean -fd",
+            "git clean -f",
+            "shred"
           ],
           "description": "Commands that must not be auto-approved. A single word matches the command name only (del matches del file, not delta). Several words match that sequence (rm -rf, git push --force). If a blocked command starts, that terminal is closed and terminal auto-accept pauses for 60 seconds."
         }
@@ -137,7 +145,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "node scripts/release.js --bump=patch --variant=universal",
-    "test": "tsc -p tsconfig.test.json && node --test out-test/test/blocked.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test out-test/test/blocked.test.js out-test/test/scriptInspector.test.js",
     "package:same": "node scripts/release.js --no-bump --variant=universal",
     "package:minor": "node scripts/release.js --bump=minor --variant=universal",
     "package:variants": "node scripts/release.js --bump=patch --variant=all",

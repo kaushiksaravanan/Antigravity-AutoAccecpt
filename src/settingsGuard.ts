@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SETTINGS_SNAPSHOT_KEY, autoApproveSettings } from './catalog';
+import { SETTINGS_SNAPSHOT_KEY } from './catalog';
 
 interface PersistedSetting {
     section: string;
@@ -30,7 +30,7 @@ export class SettingsGuard {
         await this.restoreEntries(leftover);
     }
 
-    async apply(): Promise<void> {
+    async apply(settings: ReadonlyArray<readonly [string, string, unknown]>): Promise<void> {
         if (this.applied) {
             return;
         }
@@ -40,7 +40,7 @@ export class SettingsGuard {
             snapshot.set(this.id(existing.section, existing.key), existing);
         }
 
-        for (const [section, key] of autoApproveSettings) {
+        for (const [section, key] of settings) {
             const settingId = this.id(section, key);
             if (snapshot.has(settingId)) {
                 continue;
@@ -58,7 +58,7 @@ export class SettingsGuard {
 
         let applied = 0;
         let skipped = 0;
-        for (const [section, key, value] of autoApproveSettings) {
+        for (const [section, key, value] of settings) {
             try {
                 const config = vscode.workspace.getConfiguration(section);
                 const current = config.inspect(key)?.globalValue;

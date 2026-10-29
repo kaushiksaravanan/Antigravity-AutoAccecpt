@@ -1,13 +1,17 @@
 import * as vscode from 'vscode';
 import { findBlockedPattern } from './blocked';
+import { inspectCommand } from './scriptInspector';
 import {
     DEFAULT_BLOCKED_COMMANDS,
     ENABLED_STATE_KEY,
     TERMINAL_BLOCK_PAUSE_MS,
+    acceptNowCommands,
     criticalAcceptCommands,
+    editAutoApproveSettings,
     isRunAcceptCommand,
     runAcceptCommands,
     secondaryAcceptCommands,
+    terminalAutoApproveSettings,
 } from './catalog';
 import { CdpFallback } from './cdpFallback';
 import { SettingsGuard } from './settingsGuard';
@@ -35,6 +39,7 @@ export class AutoAcceptor implements vscode.Disposable {
     private isFullPollInProgress = false;
     private startGeneration = 0;
     private terminalAcceptPausedUntil = 0;
+    private blindAcceptWarningLogged = false;
     private lastUserInteractionTime = 0;
     private pollInterval: ReturnType<typeof setInterval> | null = null;
     private fastPollInterval: ReturnType<typeof setInterval> | null = null;
@@ -99,7 +104,17 @@ export class AutoAcceptor implements vscode.Disposable {
 
         try {
             if (this.autoConfigureSettings()) {
-                await this.settings.apply();
+                const safeForTerminal = this.cdpEnabled() || this.allowBlindTerminalAccept();
+                const settingsToApply = safeForTerminal
+                    ? [...editAutoApproveSettings, ...terminalAutoApproveSettings]
+                    : [...editAutoApproveSettings];
+                await this.settings.apply(settingsToApply);
+                if (!safeForTerminal) {
+                    this.log(
+                        'Terminal auto-approve settings NOT applied (CDP is off and allowBlindTerminalAccept is off). ' +
+                        'Terminal commands will require manual approval.',
+                    );
+                }
             }
             if (this.isDisposed || generation !== this.startGeneration) {
                 await this.settings.restore();
@@ -266,12 +281,33 @@ export class AutoAcceptor implements vscode.Disposable {
         }
     }
 
-    /** Run-accept stays on the poll until CDP is actually connected and can read the command text. */
+    /**
+     * Whether run-accept commands (terminal / tool execution) should fire from polling.
+     *
+     * Returns false when:
+     *  - Terminal acceptance is paused (a blocked command was just caught)
+     *  - CDP is enabled and connected (CDP handles acceptance with its own blocklist check)
+     *  - We have no visibility into the command text (CDP off + blind accept off)
+     */
     private shouldFireRunAccept(): boolean {
         if (this.isTerminalPaused()) {
             return false;
         }
+        // When CDP is enabled and connected, CDP handles terminal acceptance
+        // with its own blocklist check via the page script.
         if (this.cdpEnabled() && this.cdp.isConnected()) {
+            return false;
+        }
+        // When CDP is off or disconnected, we have no visibility into the
+        // command text being approved. Only allow if explicitly opted in.
+        if (!this.allowBlindTerminalAccept()) {
+            if (!this.blindAcceptWarningLogged) {
+                this.blindAcceptWarningLogged = true;
+                this.log(
+                    'Terminal auto-accept is disabled: CDP is off and allowBlindTerminalAccept is false. ' +
+                    'Enable CDP (recommended) or set autoAcceptAgent.allowBlindTerminalAccept for terminal auto-accept.',
+                );
+            }
             return false;
         }
         return true;
@@ -289,11 +325,29 @@ export class AutoAcceptor implements vscode.Disposable {
                 if (!commandLine) {
                     return;
                 }
-                const blocked = findBlockedPattern(commandLine, this.blockedCommands());
+
+                // Phase 1: Direct blocklist check on the command text
+                let blocked = findBlockedPattern(commandLine, this.blockedCommands());
+
+                // Phase 3: Check if it invokes a script containing blocked patterns
+                if (!blocked) {
+                    try {
+                        blocked = inspectCommand(
+                            commandLine,
+                            this.workspaceFolders(),
+                            this.blockedCommands(),
+                            (msg) => this.log(msg),
+                        );
+                    } catch (err: unknown) {
+                        this.log(`Script inspection error: ${errorMessage(err)}`);
+                    }
+                }
+
                 if (!blocked) {
                     this.log(`Terminal command started: ${commandLine}`);
                     return;
                 }
+
                 this.pauseTerminalAccept(blocked);
                 try {
                     event.terminal.sendText('\u0003', false);
@@ -443,6 +497,39 @@ export class AutoAcceptor implements vscode.Disposable {
             return 9222;
         }
         return Math.floor(value);
+    }
+
+    private allowBlindTerminalAccept(): boolean {
+        return vscode.workspace.getConfiguration('autoAcceptAgent').get<boolean>('allowBlindTerminalAccept', false);
+    }
+
+    private workspaceFolders(): string[] {
+        return (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath);
+    }
+
+    /**
+     * Fires all accept commands once, respecting the same safety gates
+     * as the polling loop. Run-accept commands are skipped when terminal
+     * auto-accept is unsafe.
+     */
+    async acceptNow(): Promise<void> {
+        if (this.isDisposed) {
+            return;
+        }
+        const allowRun = this.shouldFireRunAccept();
+        for (const command of acceptNowCommands) {
+            if (this.isDisposed) {
+                return;
+            }
+            if (!allowRun && isRunAcceptCommand(command)) {
+                continue;
+            }
+            try {
+                await vscode.commands.executeCommand(command);
+            } catch {
+                // The command is not registered, or nothing is waiting for it.
+            }
+        }
     }
 
     private updateStatusBar(state: 'on' | 'off'): void {

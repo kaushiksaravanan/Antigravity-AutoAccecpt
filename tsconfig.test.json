@@ -8,6 +8,7 @@
   "include": [
     "src/blocked.ts",
     "src/catalog.ts",
+    "src/scriptInspector.ts",
     "test/**/*.ts"
   ],
   "exclude": [

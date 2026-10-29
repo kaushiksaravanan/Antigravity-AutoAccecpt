@@ -122,6 +122,73 @@ function afterFlag(tokens, flags) {
     return [];
 }
 
+function normalizeFlags(tokens) {
+    if (tokens.length < 2) return tokens;
+    var cmd = commandName(tokens[0]);
+    if (cmd === 'rm') return normalizeRm(tokens);
+    if (cmd === 'git' && tokens.length > 2) {
+        if (tokens[1] === 'push') return normalizeGitPush(tokens);
+        if (tokens[1] === 'clean') return normalizeGitClean(tokens);
+    }
+    return tokens;
+}
+
+function normalizeRm(tokens) {
+    var hasR = false, hasF = false;
+    var rest = [];
+    for (var i = 1; i < tokens.length; i++) {
+        var t = tokens[i];
+        if (t === '--recursive') { hasR = true; continue; }
+        if (t === '--force') { hasF = true; continue; }
+        if (t.charAt(0) === '-' && t.charAt(1) !== '-' && t.length > 1) {
+            for (var c = 1; c < t.length; c++) {
+                if (t.charAt(c) === 'r') hasR = true;
+                else if (t.charAt(c) === 'f') hasF = true;
+            }
+            continue;
+        }
+        rest.push(t);
+    }
+    var result = [tokens[0]];
+    if (hasR && hasF) result.push('-rf');
+    else if (hasR) result.push('-r');
+    else if (hasF) result.push('-f');
+    for (var j = 0; j < rest.length; j++) result.push(rest[j]);
+    return result;
+}
+
+function normalizeGitPush(tokens) {
+    var result = [tokens[0], tokens[1]];
+    for (var i = 2; i < tokens.length; i++) {
+        if (tokens[i] === '-f') result.push('--force');
+        else result.push(tokens[i]);
+    }
+    return result;
+}
+
+function normalizeGitClean(tokens) {
+    var hasF = false, hasD = false;
+    var rest = [];
+    for (var i = 2; i < tokens.length; i++) {
+        var t = tokens[i];
+        if (t === '--force') { hasF = true; continue; }
+        if (t.charAt(0) === '-' && t.charAt(1) !== '-' && t.length > 1) {
+            for (var c = 1; c < t.length; c++) {
+                if (t.charAt(c) === 'f') hasF = true;
+                else if (t.charAt(c) === 'd') hasD = true;
+            }
+            continue;
+        }
+        rest.push(t);
+    }
+    var result = [tokens[0], tokens[1]];
+    if (hasF && hasD) result.push('-fd');
+    else if (hasF) result.push('-f');
+    else if (hasD) result.push('-d');
+    for (var j = 0; j < rest.length; j++) result.push(rest[j]);
+    return result;
+}
+
 function patternTokens(pattern) {
     return tokenize(String(pattern || '')).map(function (token) { return token.toLowerCase(); });
 }
@@ -131,7 +198,7 @@ function matchSegment(segment, patterns, depth) {
     var tokens = unwrap(tokenize(segment), 0);
     if (tokens.length === 1 && /\s/.test(tokens[0])) return matchSegment(tokens[0], patterns, depth + 1);
     if (!tokens.length) return '';
-    var lower = tokens.map(function (token) { return token.toLowerCase(); });
+    var lower = normalizeFlags(tokens.map(function (token) { return token.toLowerCase(); }));
     var head = commandName(tokens[0]);
     for (var p = 0; p < patterns.length; p++) {
         var expected = patternTokens(patterns[p]);

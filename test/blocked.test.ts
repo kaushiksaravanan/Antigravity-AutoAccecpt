@@ -40,3 +40,29 @@ test('empty input does not match', () => {
     assert.equal(findBlockedPattern('', blocked), null);
     assert.equal(findBlockedPattern('del file', []), null);
 });
+
+test('normalizes flags to catch equivalent destructive invocations', () => {
+    // rm flag combinations
+    assert.equal(findBlockedPattern('rm -fr ./important', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('rm -r -f ./important', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('rm -f -r ./important', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('rm --recursive --force ./important', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('rm --force --recursive ./important', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('rm -r ./important', blocked), 'rm -r');
+    assert.equal(findBlockedPattern('rm --recursive ./important', blocked), 'rm -r');
+
+    // git push flags
+    assert.equal(findBlockedPattern('git push -f origin main', blocked), 'git push --force');
+    assert.equal(findBlockedPattern('git push --force origin main', blocked), 'git push --force');
+
+    // git clean flags
+    assert.equal(findBlockedPattern('git clean -f', blocked), 'git clean -f');
+    assert.equal(findBlockedPattern('git clean -fd', blocked), 'git clean -fd');
+    assert.equal(findBlockedPattern('git clean -f -d', blocked), 'git clean -fd');
+    assert.equal(findBlockedPattern('git clean -d -f', blocked), 'git clean -fd');
+    assert.equal(findBlockedPattern('git clean --force', blocked), 'git clean -f');
+
+    // shred
+    assert.equal(findBlockedPattern('shred -u secret.txt', blocked), 'shred');
+});
+
