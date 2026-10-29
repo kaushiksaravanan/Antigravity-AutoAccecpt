@@ -345,11 +345,13 @@ export class AutoAcceptor implements vscode.Disposable {
                 // Phase 3: Check if it invokes a script containing blocked patterns
                 if (!blocked) {
                     try {
+                        const policy = vscode.workspace.getConfiguration('autoAcceptAgent').get<'warn' | 'block'>('unknownScriptPolicy', 'warn');
                         blocked = inspectCommand(
                             commandLine,
                             this.workspaceFolders(),
                             this.blockedCommands(),
                             (msg) => this.log(msg),
+                            { unknownScriptPolicy: policy },
                         );
                     } catch (err: unknown) {
                         this.log(`Script inspection error: ${errorMessage(err)}`);
@@ -436,7 +438,7 @@ export class AutoAcceptor implements vscode.Disposable {
 
     private pauseTerminalAccept(pattern: string): void {
         this.terminalAcceptPausedUntil = Date.now() + TERMINAL_BLOCK_PAUSE_MS;
-        const message = `AutoAccept-Antigravity: Stopped blocked command "${pattern}" and closed that terminal. Terminal auto-accept is paused for 60 seconds.`;
+        const message = `AutoAccept-Antigravity: Attempted interruption of blocked command "${pattern}" and closed that terminal. Terminal auto-accept is paused for 60 seconds.`;
         this.log(message);
         void vscode.window.showWarningMessage(message);
     }

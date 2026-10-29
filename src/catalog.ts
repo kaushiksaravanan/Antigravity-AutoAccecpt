@@ -112,4 +112,8 @@ export const DEFAULT_BLOCKED_COMMANDS: readonly string[] = [
     'git clean -fd',
     'git clean -f',
     'shred',
+    'dd',
+    'wipefs',
+    'truncate',
+    'cipher /w',
 ];

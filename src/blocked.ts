@@ -20,12 +20,59 @@ function splitCommandSegments(text) {
     var lines = text.split(/\r?\n/);
     var segments = [];
     for (var i = 0; i < lines.length; i++) {
-        var parts = splitOperators(lines[i]);
+        var line = lines[i];
+        var subs = extractSubshells(line);
+        for (var s = 0; s < subs.length; s++) {
+            var subParts = splitOperators(subs[s]);
+            for (var sp = 0; sp < subParts.length; sp++) {
+                if (subParts[sp].trim()) segments.push(subParts[sp]);
+            }
+        }
+        var parts = splitOperators(line);
         for (var j = 0; j < parts.length; j++) {
             if (parts[j].trim()) segments.push(parts[j]);
         }
     }
     return segments;
+}
+
+function extractSubshells(text) {
+    var subshells = [];
+    var trimmed = text.trim();
+    if (trimmed.length > 2 && trimmed.charAt(0) === '(' && trimmed.charAt(trimmed.length - 1) === ')') {
+        subshells.push(trimmed.slice(1, -1));
+    }
+    // Extract $(...)
+    var dollarIdx = 0;
+    while ((dollarIdx = text.indexOf('$(', dollarIdx)) !== -1) {
+        var depth = 1;
+        var end = dollarIdx + 2;
+        while (end < text.length && depth > 0) {
+            var c = text.charAt(end);
+            if (c === '(') depth++;
+            else if (c === ')') depth--;
+            end++;
+        }
+        if (depth === 0) {
+            subshells.push(text.slice(dollarIdx + 2, end - 1));
+            dollarIdx = end;
+        } else {
+            break;
+        }
+    }
+    // Extract backtick command substitutions without literal backticks
+    var bt = String.fromCharCode(96);
+    var bIdx = 0;
+    while ((bIdx = text.indexOf(bt, bIdx)) !== -1) {
+        var bEnd = text.indexOf(bt, bIdx + 1);
+        if (bEnd !== -1) {
+            subshells.push(text.slice(bIdx + 1, bEnd));
+            bIdx = bEnd + 1;
+        } else {
+            break;
+        }
+    }
+    return subshells;
 }
 
 function splitOperators(line) {
@@ -55,6 +102,15 @@ function splitOperators(line) {
             i++;
             continue;
         }
+        if (ch === '&') {
+            var prev = i > 0 ? line.charAt(i - 1) : '';
+            var next = i + 1 < line.length ? line.charAt(i + 1) : '';
+            if (prev !== '>' && next !== '>') {
+                parts.push(current);
+                current = '';
+                continue;
+            }
+        }
         if (ch === '|') {
             parts.push(current);
             current = '';
@@ -77,6 +133,14 @@ function tokenize(segment) {
             else current += ch;
             continue;
         }
+        if (ch === '\\' && i + 1 < segment.length && !quote) {
+            var nextCh = segment.charAt(i + 1);
+            if (nextCh === ' ' || nextCh === '\t' || nextCh === '"' || nextCh === "'" || nextCh === '\\') {
+                i++;
+                current += nextCh;
+                continue;
+            }
+        }
         if (ch === '"' || ch === "'") {
             quote = ch;
             continue;
@@ -95,7 +159,15 @@ function tokenize(segment) {
 function commandName(token) {
     var base = String(token);
     var slash = Math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
-    if (slash >= 0) base = base.slice(slash + 1);
+    if (slash >= 0) {
+        if (base.charAt(slash) === '\\' && base.indexOf('/') === -1 && base.indexOf(':') === -1) {
+            var after = base.slice(slash + 1);
+            if (!after.includes('.') && base.length <= 4) {
+                return base.replace(/\\/g, '').toLowerCase();
+            }
+        }
+        base = base.slice(slash + 1);
+    }
     return base.replace(/\.(exe|com|cmd|bat|ps1)$/i, '').toLowerCase();
 }
 
@@ -103,8 +175,18 @@ function unwrap(tokens, depth) {
     if (!tokens.length || depth > 6) return tokens;
     var head = tokens[0].toLowerCase();
     if (head === '&' || head === '.' || head === '>' || head === '$' || head === '#' || head === '%') return unwrap(tokens.slice(1), depth + 1);
-    if (head === 'sudo' || head === 'env' || head === 'command' || head === 'time' || head === 'nice' || head === 'nohup') {
+    if (head === 'sudo' || head === 'env' || head === 'command' || head === 'time' || head === 'nice' || head === 'nohup' || head === 'eval') {
         return unwrap(tokens.slice(1), depth + 1);
+    }
+    if (head === 'xargs') {
+        return unwrap(afterFlag(tokens, ['-0', '-i', '-p', '-n', '-s', '-r', '-t', '-x']), depth + 1);
+    }
+    if (head === 'find') {
+        for (var f = 1; f < tokens.length; f++) {
+            if (tokens[f] === '-exec' || tokens[f] === '-execdir') {
+                return unwrap(tokens.slice(f + 1), depth + 1);
+            }
+        }
     }
     if (/^[a-z_][a-z0-9_]*=/i.test(tokens[0])) return unwrap(tokens.slice(1), depth + 1);
     if (/^(pwsh|powershell)(\.exe)?$/i.test(head)) return unwrap(afterFlag(tokens, ['-command', '-c']), depth + 1);
@@ -151,6 +233,17 @@ function normalizeFlags(tokens) {
     var cmd = commandName(tokens[0]);
     tokens = [cmd].concat(tokens.slice(1));
     if (cmd === 'rm') return normalizeRm(tokens);
+    if (cmd === 'cipher') {
+        var cipherRes = [tokens[0]];
+        for (var ci = 1; ci < tokens.length; ci++) {
+            if (/^\/w(:.*)?$/i.test(tokens[ci])) {
+                cipherRes.push('/w');
+            } else {
+                cipherRes.push(tokens[ci]);
+            }
+        }
+        return cipherRes;
+    }
     if (cmd === 'git') {
         var unwrappedGit = unwrapGitGlobals(tokens);
         if (unwrappedGit.length > 2) {

@@ -113,6 +113,12 @@
           "default": false,
           "description": "DANGEROUS: Auto-approve terminal execution even when CDP is disabled and command text cannot be inspected. When false (default), terminal commands require manual approval unless CDP is connected."
         },
+        "autoAcceptAgent.unknownScriptPolicy": {
+          "type": "string",
+          "enum": ["warn", "block"],
+          "default": "warn",
+          "description": "Policy when a terminal command invokes a script file that cannot be resolved in the workspace or exceeds size limits. 'warn' logs an advisory; 'block' withholds approval."
+        },
         "autoAcceptAgent.blockedCommands": {
           "type": "array",
           "scope": "application",
@@ -135,7 +141,11 @@
             "git reset --hard",
             "git clean -fd",
             "git clean -f",
-            "shred"
+            "shred",
+            "dd",
+            "wipefs",
+            "truncate",
+            "cipher /w"
           ],
           "description": "Commands that must not be auto-approved. A single word matches the command name only (del matches del file, not delta). Several words match that sequence (rm -rf, git push --force). If a blocked command starts, that terminal is closed and terminal auto-accept pauses for 60 seconds."
         }

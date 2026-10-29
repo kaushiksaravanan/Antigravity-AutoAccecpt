@@ -20,7 +20,11 @@
     "git reset --hard",
     "git clean -fd",
     "git clean -f",
-    "shred"
+    "shred",
+    "dd",
+    "wipefs",
+    "truncate",
+    "cipher /w"
   ],
   "autoAcceptAgent.customButtonTexts": []
 }

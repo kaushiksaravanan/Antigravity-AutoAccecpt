@@ -98,5 +98,31 @@ test('aggressive and relaxed presets retain general destructive command coverage
     assert.equal(findBlockedPattern('git push origin --force', relaxed['autoAcceptAgent.blockedCommands']), 'git push --force');
 });
 
+test('catches subshells, command substitutions, backticks, and Windows single &', () => {
+    // Subshells and command substitutions
+    assert.equal(findBlockedPattern('echo $(rm -rf /)', blocked), 'rm -rf /');
+    assert.equal(findBlockedPattern('echo $(rm -rf ./fixture)', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('echo `rm -rf ./fixture`', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('(cd /tmp && rm -rf ./fixture)', blocked), 'rm -rf');
+
+    // Windows cmd.exe single & command chaining
+    assert.equal(findBlockedPattern('echo ok & del fixture.txt', blocked), 'del');
+    assert.equal(findBlockedPattern('echo ok & format D:', blocked), 'format');
+
+    // Character escape unescaping
+    assert.equal(findBlockedPattern('r\\m -rf ./fixture', blocked), 'rm -rf');
+
+    // Wrapper unwrapping: eval, xargs, find -exec
+    assert.equal(findBlockedPattern('eval "rm -rf /"', blocked), 'rm -rf /');
+    assert.equal(findBlockedPattern('xargs rm -rf', blocked), 'rm -rf');
+    assert.equal(findBlockedPattern('find . -name "*.bak" -exec rm -rf {} +', blocked), 'rm -rf');
+
+    // Additional destructive utilities
+    assert.equal(findBlockedPattern('dd if=/dev/zero of=/dev/sda', blocked), 'dd');
+    assert.equal(findBlockedPattern('truncate -s 0 db.sqlite', blocked), 'truncate');
+    assert.equal(findBlockedPattern('wipefs -a /dev/sda', blocked), 'wipefs');
+    assert.equal(findBlockedPattern('cipher /w:C', blocked), 'cipher /w');
+});
+
 
 
