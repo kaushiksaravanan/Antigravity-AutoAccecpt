@@ -68,13 +68,13 @@ function createAutoAcceptorEnv(options: { choice?: string } = {}) {
         },
     };
 
-    const status = { text: '', tooltip: '', show() {}, dispose() {} };
-    const output = { appendLine() {}, dispose() {} };
+    const status = { text: '', tooltip: '', show() { }, dispose() { } };
+    const output = { appendLine() { }, dispose() { } };
 
     const vscode = {
         ConfigurationTarget: { Global: 1 },
         StatusBarAlignment: { Right: 2 },
-        ThemeColor: class {},
+        ThemeColor: class { },
         env: {
             openExternal: async (uri: { toString: () => string }) => {
                 openedUrls.push(uri.toString());
@@ -86,7 +86,7 @@ function createAutoAcceptorEnv(options: { choice?: string } = {}) {
         },
         workspace: {
             workspaceFolders: [],
-            onDidChangeConfiguration: () => ({ dispose() {} }),
+            onDidChangeConfiguration: () => ({ dispose() { } }),
             getConfiguration(section: string) {
                 return {
                     get: (k: string, fb: unknown) => globals.get(`${section}.${k}`) ?? fb,
@@ -110,7 +110,7 @@ function createAutoAcceptorEnv(options: { choice?: string } = {}) {
             createOutputChannel: () => output,
         },
         commands: {
-            executeCommand: async () => {},
+            executeCommand: async () => { },
         },
     };
 
@@ -165,8 +165,8 @@ test('lifecycle: editAutoApproveSettings separates edit approvals from global to
 test('lifecycle: second settings owner does not restore first live owner settings', async () => {
     const { SettingsGuard, context, globals } = createMockEnv();
 
-    const a = new SettingsGuard(context, () => {});
-    const b = new SettingsGuard(context, () => {});
+    const a = new SettingsGuard(context, () => { });
+    const b = new SettingsGuard(context, () => { });
 
     await a.apply(autoApproveSettings);
     assert.equal(globals.get('chat.tools.edits.autoApprove'), true);

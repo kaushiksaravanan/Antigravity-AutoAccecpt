@@ -76,6 +76,77 @@ Four strategies work together:
 
 [Read the full technical overview](docs/how-it-works.md)
 
+### Security Interception & Popout Flow
+
+When a dangerous command is detected, here is exactly what happens:
+
+```mermaid
+flowchart TD
+    subgraph Detection["Detection & Inspection"]
+        A1["Terminal Execution<br/>(onDidStartTerminalShellExecution)"] --> D["Script & Command Inspector<br/>(inspectCommand / findBlockedPattern)"]
+        A2["CDP Webview Interception<br/>(Pre-Click Button Check)"] --> D
+    end
+
+    D -->|"Safe"| OK["✅ Auto-Approve & Continue"]
+    D -->|"Blocked"| Block["🛑 Immediate Halt"]
+
+    subgraph Enforce["Enforcement"]
+        Block --> P1["Send SIGINT & Close Terminal"]
+        Block --> P2["Pause Auto-Accept (60s cooldown)"]
+        P1 & P2 --> Popout["Show Modal Popout Dialog"]
+    end
+
+    subgraph Details["Popout Audit Details"]
+        Popout -.-> Info["• Command blocked<br/>• Matched pattern<br/>• Triggering agent<br/>• Timestamp"]
+    end
+
+    subgraph Actions["User Decision (3 Options)"]
+        Popout --> Opt1["Accept Risk & Continue"]
+        Popout --> Opt2["Wrong — Give Feedback on Open VSX"]
+        Popout --> Opt3["Correct — Dismiss"]
+    end
+
+    Opt1 --> R1["Reset pause → Resume auto-accept"]
+    Opt2 --> R2["Open Open VSX extension page in browser"]
+    Opt3 --> R3["Keep auto-accept paused for safety"]
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Agent as AI Agent / Terminal
+    participant Inspector as Script Inspector
+    participant Acceptor as AutoAcceptor
+    participant VSCode as VS Code
+
+    Agent->>Inspector: Command dispatched
+    Inspector->>Inspector: Check patterns, unwrappers & dependencies
+
+    alt Destructive Command Detected
+        Inspector-->>Acceptor: BlockedCommandInfo
+        Acceptor->>Agent: SIGINT + Close terminal
+        Acceptor->>Acceptor: Pause auto-accept (60s)
+        Acceptor->>VSCode: Modal popout with 3 CTAs
+        VSCode-->>User: ⚠️ Dangerous Command Blocked
+
+        alt Accept Risk & Continue
+            User->>Acceptor: Override
+            Acceptor->>Acceptor: Reset pause timer
+            Acceptor->>VSCode: ℹ️ Risk accepted. Resumed.
+        else Wrong — Give Feedback
+            User->>Acceptor: Report false alarm
+            Acceptor->>VSCode: Open Open VSX page
+        else Correct — Dismiss
+            User->>Acceptor: Confirm block
+            Note over Acceptor: Auto-accept stays paused
+        end
+    else Safe Command
+        Inspector-->>Acceptor: Approved
+        Acceptor->>Agent: Auto-approve
+    end
+```
+
 ## Examples
 
 Check [examples/](examples/) for configuration templates:

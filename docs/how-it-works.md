@@ -78,6 +78,120 @@ When a blocked command is caught (either before execution via CDP or upon termin
    - **Wrong (Give Feedback on Open VSX)**: Opens the extension page on Open VSX so users can report false positives or discuss blocked patterns.
    - **Correct (Dismiss)**: Closes the dialog cleanly while keeping auto-accept paused to protect the workspace.
 
+### Interception Architecture
+
+The following diagram shows the full detection-to-resolution pipeline. Both the terminal event path and the CDP webview path feed into the same inspector and converge on the same modal popout:
+
+```mermaid
+flowchart TD
+    subgraph Detection["1. Detection & Inspection Layers"]
+        A1["Terminal Execution<br/>(onDidStartTerminalShellExecution)<br/><code>autoAcceptor.ts L362</code>"] --> D["Script & Command Inspector<br/>(inspectCommand + findBlockedPattern)<br/><code>scriptInspector.ts / blocked.ts</code>"]
+        A2["CDP Pre-Execution Check<br/>(Webview Button Interception)<br/><code>cdpFallback.ts L238</code>"] --> D
+    end
+
+    D -->|"Safe / Verified"| OK["✅ Auto-Approve Action"]
+    D -->|"Destructive / Blocked"| Block["🛑 Immediate Halt & Protection"]
+
+    subgraph Enforcement["2. Interruption & Pause"]
+        Block --> P1["Terminal Path: Send SIGINT + Close Terminal<br/><code>autoAcceptor.ts L399-408</code>"]
+        Block --> P1b["CDP Path: Remove button target attribute<br/><code>cdpFallback.ts L322-327</code>"]
+        Block --> P2["Pause Auto-Accept for 60s<br/><code>terminalAcceptPausedUntil = Date.now() + 60_000</code>"]
+        P1 & P1b & P2 --> Popout["Show Modal Popout Dialog<br/><code>vscode.window.showWarningMessage</code><br/><code>autoAcceptor.ts L508-514</code>"]
+    end
+
+    subgraph PopoutDetails["Popout Content"]
+        Popout -.-> Details["• Title: ⚠️ Dangerous Command Blocked<br/>• Command: Full command text<br/>• Blocked Pattern: Matched rule<br/>• Triggered By: Agent / Terminal name<br/>• Timestamp: Local execution time"]
+    end
+
+    subgraph Decision["3. User Decision — 3 Options"]
+        Popout --> Opt1["Accept Risk & Continue"]
+        Popout --> Opt2["Wrong — Give Feedback on Open VSX"]
+        Popout --> Opt3["Correct — Dismiss / Esc"]
+    end
+
+    subgraph Resolution["Resolution"]
+        Opt1 --> R1["Reset terminalAcceptPausedUntil = 0<br/>Resume auto-accept immediately<br/><code>autoAcceptor.ts L516-519</code>"]
+        Opt2 --> R2["Open Open VSX extension page<br/>via vscode.env.openExternal<br/><code>autoAcceptor.ts L520-522</code>"]
+        Opt3 --> R3["Dialog disappears cleanly<br/>Auto-accept stays paused<br/><code>autoAcceptor.ts L523-525</code>"]
+    end
+```
+
+### Execution & Interaction Sequence
+
+This sequence diagram shows the runtime interaction between the AI agent, the inspector, the security core, and the user:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User
+    participant Agent as AI Agent / Terminal
+    participant Inspector as Script & Command Inspector
+    participant Acceptor as AutoAcceptor (Security Core)
+    participant VSCode as VS Code Host
+
+    Agent->>Inspector: Dispatch command for execution
+    Inspector->>Inspector: Normalize flags, split compounds,<br/>unwrap sudo/env/nohup,<br/>follow script dependencies
+
+    alt Destructive Command Detected
+        Inspector-->>Acceptor: BlockedCommandInfo<br/>(command, pattern, agent, timestamp)
+        Acceptor->>Acceptor: terminalAcceptPausedUntil = now + 60s
+        Acceptor->>Agent: Send SIGINT (Ctrl-C) + Close terminal
+        Note over Acceptor: CDP path: remove button target instead
+        Acceptor->>VSCode: showWarningMessage(title,<br/>{modal: true, detail},<br/>3 CTAs)
+        VSCode-->>User: ⚠️ Dangerous Command Blocked modal
+
+        alt Option A — Accept Risk & Continue
+            User->>Acceptor: Click "Accept Risk & Continue"
+            Acceptor->>Acceptor: terminalAcceptPausedUntil = 0
+            Acceptor->>VSCode: showInformationMessage<br/>("Risk accepted. Resumed.")
+        else Option B — Wrong (Give Feedback)
+            User->>Acceptor: Click "Wrong (Give Feedback on Open VSX)"
+            Acceptor->>VSCode: openExternal(OPEN_VSX_URL)
+            VSCode->>User: Opens extension page in default browser
+        else Option C — Correct (Dismiss) / Esc
+            User->>Acceptor: Click "Correct (Dismiss)" or press Esc
+            Acceptor->>Acceptor: Keep auto-accept paused
+            Note over Acceptor,User: Dialog disappears cleanly
+        end
+    else Safe Command
+        Inspector-->>Acceptor: Approved (no blocked pattern)
+        Acceptor->>Agent: Auto-approve execution
+    end
+```
+
+### Inspector Deep Dive
+
+The script inspector performs multi-layer analysis before approving any command:
+
+```mermaid
+flowchart LR
+    subgraph Input["Raw Command"]
+        CMD["e.g. sudo env bash cleanup.sh && python -m deploy"]
+    end
+
+    subgraph Split["1. Compound Split"]
+        CMD --> S1["sudo env bash cleanup.sh"]
+        CMD --> S2["python -m deploy"]
+    end
+
+    subgraph Unwrap["2. Wrapper Unwrap"]
+        S1 --> U1["bash cleanup.sh<br/>(stripped sudo, env)"]
+        S2 --> U2["python -m deploy"]
+    end
+
+    subgraph Inspect["3. Script Inspection"]
+        U1 --> I1["Read cleanup.sh contents<br/>Check for blocked patterns<br/>Follow nested source/child scripts"]
+        U2 --> I2["Resolve deploy/__main__.py<br/>Check __init__.py<br/>Follow local imports"]
+    end
+
+    subgraph Result["4. Verdict"]
+        I1 --> V{Blocked?}
+        I2 --> V
+        V -->|Yes| BLOCK["🛑 Block + Popout"]
+        V -->|No| ALLOW["✅ Allow"]
+    end
+```
+
 ## Lifecycle
 
 Startup leaves Auto Accept off unless you previously turned it on. That choice is remembered.
