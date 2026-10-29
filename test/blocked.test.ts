@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
 import { DEFAULT_BLOCKED_COMMANDS } from '../src/catalog';
 import { findBlockedPattern } from '../src/blocked';
 
@@ -86,5 +88,15 @@ test('passes reviewer audit test cases without evasion or false alarms', () => {
     assert.equal(findBlockedPattern('echo rm -rf ./fixture', blocked), null);
     assert.equal(findBlockedPattern('printf "rm -rf ./fixture\\n"', blocked), null);
 });
+
+test('aggressive and relaxed presets retain general destructive command coverage', () => {
+    const aggressive = JSON.parse(fs.readFileSync(path.join(__dirname, '../../examples/aggressive.json'), 'utf8'));
+    const relaxed = JSON.parse(fs.readFileSync(path.join(__dirname, '../../examples/relaxed.json'), 'utf8'));
+    assert.equal(findBlockedPattern('rm -rf ./fixture', aggressive['autoAcceptAgent.blockedCommands']), 'rm -rf');
+    assert.equal(findBlockedPattern('rm -rf ./fixture', relaxed['autoAcceptAgent.blockedCommands']), 'rm -rf');
+    assert.equal(findBlockedPattern('rm -fr ./fixture', aggressive['autoAcceptAgent.blockedCommands']), 'rm -rf');
+    assert.equal(findBlockedPattern('git push origin --force', relaxed['autoAcceptAgent.blockedCommands']), 'git push --force');
+});
+
 
 
