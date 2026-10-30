@@ -29,11 +29,7 @@
 **A:** Remove it from the blocked list in settings. Or approve it manually when prompted.
 
 ### Q: Does Auto Accept collect data about me?
-**A:** No. We only know:
-- If you use the extension (install count)
-- VS Code version
-
-We do NOT see your code, commands, or personal info.
+**A:** No. This extension does not collect, transmit, or store any data. There is no telemetry, no analytics, no crash reporting, and no network calls of any kind. Everything runs entirely on your local machine. The extension has zero outbound connections — your code, commands, blocked patterns, and usage behavior never leave your editor.
 
 
 ## Performance
@@ -251,4 +247,4 @@ Check GitHub releases for changelog.
 We respond within 24 hours.
 
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-29
