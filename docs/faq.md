@@ -29,7 +29,14 @@
 **A:** Remove it from the blocked list in settings. Or approve it manually when prompted.
 
 ### Q: Does Auto Accept collect data about me?
-**A:** No. This extension does not collect, transmit, or store any data. There is no telemetry, no analytics, no crash reporting, and no network calls of any kind. Everything runs entirely on your local machine. The extension has zero outbound connections — your code, commands, blocked patterns, and usage behavior never leave your editor.
+**A:** No. This extension does not collect or transmit telemetry, analytics, or crash reports. Your code, commands, blocked patterns, and usage behavior are never sent anywhere.
+
+What the extension does locally:
+- **Persists settings and state** in VS Code extension storage so it can restore your original settings on shutdown or crash.
+- **Connects to `localhost` only** when CDP mode is enabled (`autoAcceptAgent.enableCDP`), to attach to VS Code's own debugging port. No external network connections are made.
+- **Opens a browser URL** only when you explicitly click "Wrong (Give Feedback on Open VSX)" in the blocked-command popout.
+
+No data leaves your machine unless you choose to open the feedback page.
 
 
 ## Performance

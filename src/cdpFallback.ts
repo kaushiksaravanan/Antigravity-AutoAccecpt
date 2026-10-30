@@ -8,6 +8,8 @@ export interface BlockedCommandInfo {
     pattern: string;
     agent: string;
     timestamp: string;
+    /** 'pre-execution' = refused before running; 'post-start' = interrupted after starting */
+    source: 'pre-execution' | 'post-start';
 }
 
 export interface CdpHost {
@@ -331,12 +333,26 @@ export class CdpFallback {
                                         pattern: blockedReason,
                                         agent: 'Antigravity Agent UI',
                                         timestamp: new Date().toLocaleTimeString(),
+                                        source: 'pre-execution',
                                     });
                                 } else {
                                     const clickMsg = await send('Runtime.evaluate', {
                                         expression: `(function() {
                                             var el = document.querySelector('[data-aa-target="${candidate.targetId}"]');
                                             if (!el) return 'target-lost';
+                                            // Revalidate current container text before clicking to prevent stale-command races
+                                            var container = el.parentElement;
+                                            while (container && container !== document.body) {
+                                                var cn = container.className || '';
+                                                if (typeof cn === 'string' && (cn.indexOf('step') !== -1 || cn.indexOf('chat') !== -1 || cn.indexOf('response') !== -1)) break;
+                                                container = container.parentElement;
+                                            }
+                                            var currentText = ((container || document.body).innerText || '');
+                                            var blocked = findBlockedPattern(currentText, ${JSON.stringify(blockedList)});
+                                            if (blocked) {
+                                                el.removeAttribute('data-aa-target');
+                                                return 'blocked:' + blocked;
+                                            }
                                             el.removeAttribute('data-aa-target');
                                             el.setAttribute('data-aa-t', '' + Date.now());
                                             el.click();
@@ -344,7 +360,17 @@ export class CdpFallback {
                                         })()`,
                                     }, sessionId);
                                     const clickResult = clickMsg.result?.result?.value;
-                                    if (typeof clickResult === 'string' && clickResult.startsWith('clicked:')) {
+                                    if (typeof clickResult === 'string' && clickResult.startsWith('blocked:')) {
+                                        const revalBlocked = clickResult.replace(/^blocked:/, '');
+                                        this.host.log(`CDP refused revalidated button: ${revalBlocked}`);
+                                        this.host.onBlocked?.({
+                                            command: 'Revalidated Command',
+                                            pattern: revalBlocked,
+                                            agent: 'Antigravity Agent UI',
+                                            timestamp: new Date().toLocaleTimeString(),
+                                            source: 'pre-execution',
+                                        });
+                                    } else if (typeof clickResult === 'string' && clickResult.startsWith('clicked:')) {
                                         if (clickResult.includes('expand') || clickResult.includes('requires input')) {
                                             this.lastExpandTimes[target.targetId] = Date.now();
                                         }
@@ -367,6 +393,7 @@ export class CdpFallback {
                             pattern: result.replace(/^blocked:/, ''),
                             agent: 'Antigravity Agent UI',
                             timestamp: new Date().toLocaleTimeString(),
+                            source: 'pre-execution',
                         });
                     }
                 }
@@ -535,16 +562,25 @@ var CAN_EXPAND = ${canExpand ? 'true' : 'false'};
                 : [];
             for (var c = 0; c < codeEls.length; c++) {
                 var codeText = (codeEls[c].innerText || codeEls[c].textContent || '').trim();
-                if (codeText && codeText.length < 2048 && candidates.indexOf(codeText) === -1) {
+                if (codeText && candidates.indexOf(codeText) === -1) {
                     candidates.push(codeText);
                 }
             }
             var lines = containerText.split(/[\\r\\n]+/);
             for (var l = 0; l < lines.length; l++) {
                 var line = lines[l].trim();
-                if (line && line.length < 2048 && candidates.indexOf(line) === -1) {
+                if (line.indexOf('$ ') === 0) {
+                    line = line.substring(2).trim();
+                } else if (line.indexOf('> ') === 0) {
+                    line = line.substring(2).trim();
+                }
+                if (line && candidates.indexOf(line) === -1) {
                     candidates.push(line);
                 }
+            }
+
+            if (candidates.length === 0 && (text.toLowerCase() === 'run' || text.toLowerCase() === 'accept')) {
+                return 'missing-command-candidates';
             }
 
             var targetId = 'aa-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);

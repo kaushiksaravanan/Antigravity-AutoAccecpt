@@ -36,10 +36,6 @@ export class SettingsGuard {
     }
 
     async apply(settings: ReadonlyArray<readonly [string, string, unknown]>): Promise<void> {
-        if (this.applied) {
-            return;
-        }
-
         const snapshot = new Map<string, PersistedSetting>();
         for (const existing of this.read()) {
             snapshot.set(this.id(existing.section, existing.key), existing);
@@ -60,6 +56,21 @@ export class SettingsGuard {
         }
 
         await this.write([...snapshot.values()]);
+
+        const targetSettingIds = new Set(settings.map(([section, key]) => this.id(section, key)));
+
+        // If previously applied entries are no longer in target settings, restore them
+        if (this.applied) {
+            const toRemove: PersistedSetting[] = [];
+            for (const entry of snapshot.values()) {
+                if (!targetSettingIds.has(this.id(entry.section, entry.key))) {
+                    toRemove.push(entry);
+                }
+            }
+            if (toRemove.length > 0) {
+                await this.restoreEntries(toRemove);
+            }
+        }
 
         let applied = 0;
         let skipped = 0;

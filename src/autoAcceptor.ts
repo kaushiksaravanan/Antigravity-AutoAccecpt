@@ -413,6 +413,7 @@ export class AutoAcceptor implements vscode.Disposable {
                     pattern: blocked,
                     agent: agentName,
                     timestamp: new Date().toLocaleTimeString(),
+                    source: 'post-start',
                 });
             }));
         }

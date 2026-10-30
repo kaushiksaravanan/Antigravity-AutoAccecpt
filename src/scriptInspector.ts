@@ -62,15 +62,21 @@ export function inspectCommand(
         if (mIdx !== -1 && mIdx + 1 < tokens.length) {
             const modArg = tokens[mIdx + 1];
             const modRelPath = modArg.replace(/\./g, '/');
+            const parts = modArg.split('.');
             const candidates = [
                 `${modRelPath}.py`,
                 path.join(modRelPath, '__main__.py'),
                 path.join(modRelPath, '__init__.py'),
             ];
+            // Also check package initializers for dotted modules (e.g. pkg/__init__.py for pkg.main)
+            if (parts.length > 1) {
+                candidates.push(path.join(parts[0], '__init__.py'));
+            }
             for (const cand of candidates) {
                 const resolved = resolveFilePath(cand, workspaceFolders, effectiveCwd);
                 if (resolved) {
-                    return inspectFile(resolved, workspaceFolders, blockedPatterns, log, options, visited, 0, effectiveCwd);
+                    const hit = inspectFile(resolved, workspaceFolders, blockedPatterns, log, options, visited, 0, effectiveCwd);
+                    if (hit) return hit;
                 }
             }
             if (options.unknownScriptPolicy === 'block') {
@@ -110,6 +116,14 @@ export function inspectCommand(
     // Handle: ./script.sh, ./cleanup.py, script.sh (direct executable scripts, with or without args)
     if (/\.(sh|bash|py|js|mjs|rb|pl)$/i.test(tokens[0])) {
         return inspectFile(tokens[0], workspaceFolders, blockedPatterns, log, options, visited, 0, effectiveCwd);
+    }
+
+    // Handle extensionless executables (e.g., ./cleanup, /bin/cleanup)
+    if (tokens[0].startsWith('./') || tokens[0].startsWith('.\\') || path.isAbsolute(tokens[0])) {
+        const resolved = resolveFilePath(tokens[0], workspaceFolders, effectiveCwd);
+        if (resolved && fs.existsSync(resolved) && !fs.statSync(resolved).isDirectory()) {
+            return inspectFile(resolved, workspaceFolders, blockedPatterns, log, options, visited, 0, effectiveCwd);
+        }
     }
 
     return null;
@@ -363,6 +377,27 @@ function inspectInlineCode(
             log(`Script inspector: aliased "${pyHit}" found in inline Python code`);
             return pyHit;
         }
+
+        // Inline Python module imports: python -c "import cleanup" or from cleanup import ...
+        const importRegex = /(?:^\s*import\s+|^\s*from\s+\.?)([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)/gm;
+        let m: RegExpExecArray | null;
+        while ((m = importRegex.exec(code)) !== null) {
+            const rawImport = m[1];
+            const parts = rawImport.split('.');
+            const candidates = [
+                rawImport.replace(/\./g, '/') + '.py',
+                path.join(rawImport.replace(/\./g, '/'), '__init__.py'),
+                parts[0] + '.py',
+                path.join(parts[0], '__init__.py'),
+            ];
+            for (const cand of candidates) {
+                const resolved = resolveFilePath(cand, workspaceFolders, cwd);
+                if (resolved) {
+                    const hit = inspectFile(resolved, workspaceFolders, blockedPatterns, log, options, new Set<string>(), 1, cwd);
+                    if (hit) return hit;
+                }
+            }
+        }
     }
 
     // Check 4: aliased imports in inline JavaScript code
@@ -371,6 +406,30 @@ function inspectInlineCode(
         if (jsHit) {
             log(`Script inspector: aliased "${jsHit}" found in inline JS code`);
             return jsHit;
+        }
+
+        // Inline JS dependencies: node -e "require('./cleanup.js')"
+        const jsDepRegex = /(?:require\s*\(\s*['"]([^'"]+)['"]\s*\)|from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s+['"]([^'"]+)['"])/g;
+        let m: RegExpExecArray | null;
+        while ((m = jsDepRegex.exec(code)) !== null) {
+            const depPath = (m[1] || m[2] || m[3] || m[4] || '').trim();
+            if (depPath.startsWith('.')) {
+                const base = cwd || (workspaceFolders[0] ?? '.');
+                const candidateBase = path.resolve(base, depPath);
+                const candidates = [
+                    candidateBase,
+                    `${candidateBase}.js`,
+                    `${candidateBase}.mjs`,
+                    `${candidateBase}.cjs`,
+                    path.join(candidateBase, 'index.js'),
+                ];
+                for (const cand of candidates) {
+                    if (fs.existsSync(cand) && !fs.statSync(cand).isDirectory()) {
+                        const hit = inspectFile(cand, workspaceFolders, blockedPatterns, log, options, new Set<string>(), 1, cwd);
+                        if (hit) return hit;
+                    }
+                }
+            }
         }
     }
 
@@ -527,10 +586,16 @@ function inspectFile(
         while ((match = sourceRegex.exec(content)) !== null) {
             const sourcedTarget = match[1].trim().replace(/^['"]|['"]$/g, '');
             if (sourcedTarget && !sourcedTarget.startsWith('$')) {
-                const nestedResolved = path.isAbsolute(sourcedTarget)
-                    ? sourcedTarget
-                    : path.resolve(scriptDir, sourcedTarget);
-                const nestedHit = inspectFile(nestedResolved, workspaceFolders, blockedPatterns, log, options, visited, depth + 1, scriptDir);
+                // Sourced scripts in shell look in cwd first, then scriptDir
+                let nestedResolved = path.isAbsolute(sourcedTarget) ? sourcedTarget : null;
+                if (!nestedResolved && cwd) {
+                    const fromCwd = path.resolve(cwd, sourcedTarget);
+                    if (fs.existsSync(fromCwd)) nestedResolved = fromCwd;
+                }
+                if (!nestedResolved) {
+                    nestedResolved = path.resolve(scriptDir, sourcedTarget);
+                }
+                const nestedHit = inspectFile(nestedResolved, workspaceFolders, blockedPatterns, log, options, visited, depth + 1, cwd || scriptDir);
                 if (nestedHit) {
                     log(`Script inspector: nested sourced script "${sourcedTarget}" has blocked pattern "${nestedHit}"`);
                     return nestedHit;
@@ -543,10 +608,16 @@ function inspectFile(
         while ((match = childScriptRegex.exec(content)) !== null) {
             const childTarget = (match[1] || match[3] || '').trim().replace(/^['"]|['"]$/g, '');
             if (childTarget && !childTarget.startsWith('$')) {
-                const nestedResolved = path.isAbsolute(childTarget)
-                    ? childTarget
-                    : path.resolve(scriptDir, childTarget);
-                const nestedHit = inspectFile(nestedResolved, workspaceFolders, blockedPatterns, log, options, visited, depth + 1, scriptDir);
+                // Child scripts inherit shell execution cwd
+                let nestedResolved = path.isAbsolute(childTarget) ? childTarget : null;
+                if (!nestedResolved && cwd) {
+                    const fromCwd = path.resolve(cwd, childTarget);
+                    if (fs.existsSync(fromCwd)) nestedResolved = fromCwd;
+                }
+                if (!nestedResolved) {
+                    nestedResolved = path.resolve(scriptDir, childTarget);
+                }
+                const nestedHit = inspectFile(nestedResolved, workspaceFolders, blockedPatterns, log, options, visited, depth + 1, cwd || scriptDir);
                 if (nestedHit) {
                     log(`Script inspector: child script "${childTarget}" has blocked pattern "${nestedHit}"`);
                     return nestedHit;
@@ -554,29 +625,36 @@ function inspectFile(
             }
         }
 
-        // Check 6: check local Python imports (import <mod> or from <mod> import, including packages)
+        // Check 6: check local Python imports (import <mod> or from <mod> import, including packages and dotted paths)
         if (resolved.endsWith('.py')) {
-            const importRegex = /(?:^\s*import\s+|^\s*from\s+\.?)([a-zA-Z0-9_]+)/gm;
+            const importRegex = /(?:^\s*import\s+|^\s*from\s+\.?)([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)/gm;
             while ((match = importRegex.exec(content)) !== null) {
-                const modName = match[1];
-                const localModFile = path.resolve(scriptDir, `${modName}.py`);
-                const localPkgInit = path.resolve(scriptDir, modName, '__init__.py');
-                const targetMod = fs.existsSync(localModFile) ? localModFile : fs.existsSync(localPkgInit) ? localPkgInit : null;
-                if (targetMod) {
-                    const nestedHit = inspectFile(targetMod, workspaceFolders, blockedPatterns, log, options, visited, depth + 1, scriptDir);
-                    if (nestedHit) {
-                        log(`Script inspector: imported local module "${modName}" has blocked pattern "${nestedHit}"`);
-                        return nestedHit;
+                const fullImport = match[1];
+                const parts = fullImport.split('.');
+                const modRelPath = fullImport.replace(/\./g, '/');
+                const candidates = [
+                    path.resolve(scriptDir, `${modRelPath}.py`),
+                    path.resolve(scriptDir, modRelPath, '__init__.py'),
+                    path.resolve(scriptDir, `${parts[0]}.py`),
+                    path.resolve(scriptDir, parts[0], '__init__.py'),
+                ];
+                for (const targetMod of candidates) {
+                    if (fs.existsSync(targetMod) && !fs.statSync(targetMod).isDirectory()) {
+                        const nestedHit = inspectFile(targetMod, workspaceFolders, blockedPatterns, log, options, visited, depth + 1, scriptDir);
+                        if (nestedHit) {
+                            log(`Script inspector: imported local module "${fullImport}" has blocked pattern "${nestedHit}"`);
+                            return nestedHit;
+                        }
                     }
                 }
             }
         }
 
-        // Check 7: check local JavaScript / Node dependencies (require("./cleanup") or import ... from "./cleanup")
+        // Check 7: check local JavaScript / Node dependencies (require("./cleanup") or import ... from "./cleanup" or import "./cleanup.mjs")
         if (/\.(js|mjs|cjs|ts)$/i.test(resolved)) {
-            const jsDepRegex = /(?:require\s*\(\s*['"]([^'"]+)['"]\s*\)|from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\))/g;
+            const jsDepRegex = /(?:require\s*\(\s*['"]([^'"]+)['"]\s*\)|from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s+['"]([^'"]+)['"])/g;
             while ((match = jsDepRegex.exec(content)) !== null) {
-                const depPath = (match[1] || match[2] || match[3] || '').trim();
+                const depPath = (match[1] || match[2] || match[3] || match[4] || '').trim();
                 if (depPath.startsWith('.')) {
                     const candidateBase = path.resolve(scriptDir, depPath);
                     const candidates = [
